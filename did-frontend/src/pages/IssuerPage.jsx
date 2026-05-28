@@ -15,26 +15,26 @@ import {
 export default function IssuerPage() {
   const account = getAccount();
 
-  // ── State: Register DID ──────────────────────────────────
-  const [studentAddr, setStudentAddr] = useState("");
-  const [publicKey, setPublicKey]     = useState("");
-  const [serviceUrl, setServiceUrl]   = useState("");
-  const [didStatus, setDidStatus]     = useState(null); // {type, msg}
-  const [didLoading, setDidLoading]   = useState(false);
 
-  // ── State: Issue Credential ──────────────────────────────
-  const [holderAddr, setHolderAddr]   = useState("");
+  const [studentAddr, setStudentAddr] = useState("");
+  const [publicKey, setPublicKey] = useState("");
+  const [serviceUrl, setServiceUrl] = useState("");
+  const [didStatus, setDidStatus] = useState(null);
+  const [didLoading, setDidLoading] = useState(false);
+
+
+  const [holderAddr, setHolderAddr] = useState("");
   const [studentName, setStudentName] = useState("");
-  const [studentId, setStudentId]     = useState("");
-  const [major, setMajor]             = useState("");
-  const [credType, setCredType]       = useState("BachelorDegree");
-  const [gradYear, setGradYear]       = useState(new Date().getFullYear().toString());
-  const [expiresAt, setExpiresAt]     = useState("0");
-  const [credStatus, setCredStatus]   = useState(null);
+  const [studentId, setStudentId] = useState("");
+  const [major, setMajor] = useState("");
+  const [credType, setCredType] = useState("BachelorDegree");
+  const [gradYear, setGradYear] = useState(new Date().getFullYear().toString());
+  const [expiresAt, setExpiresAt] = useState("0");
+  const [credStatus, setCredStatus] = useState(null);
   const [credLoading, setCredLoading] = useState(false);
   const [lastIssuedHash, setLastIssuedHash] = useState("");
 
-  // ── State: Resolve DID ───────────────────────────────────
+
   const [resolveAddr, setResolveAddr] = useState("");
   const [resolvedDoc, setResolvedDoc] = useState(null);
   const [resolveStatus, setResolveStatus] = useState(null);
@@ -43,14 +43,14 @@ export default function IssuerPage() {
   if (!account) {
     return (
       <div className="connect-prompt">
-        <div className="connect-prompt-icon">🔐</div>
+        <div className="connect-prompt-icon"></div>
         <h2>Kết nối ví MetaMask</h2>
-        <p>Vui lòng kết nối ví MetaMask để sử dụng giao diện Issuer. Chọn tài khoản Issuer (Account #1) trong MetaMask.</p>
+        <p>Vui lòng kết nối ví MetaMask để sử dụng giao diện Issuer.</p>
       </div>
     );
   }
 
-  // ── Handlers ─────────────────────────────────────────────
+
 
   async function handleRegisterDID() {
     if (!studentAddr || !ethers.isAddress(studentAddr))
@@ -58,16 +58,16 @@ export default function IssuerPage() {
     setDidLoading(true);
     setDidStatus(null);
     try {
-      const signer   = getSigner();
+      const signer = getSigner();
       const contract = new ethers.Contract(CONTRACT_ADDRESSES.DID_REGISTRY, DID_REGISTRY_ABI, signer);
-      // Issuer đăng ký DID giúp sinh viên: sinh viên phải tự gọi hàm này
-      // Ở đây demo: gọi registerDID từ tài khoản sinh viên thông qua provider
-      // Thực tế sinh viên tự đăng ký; issuer kiểm tra DID có tồn tại không
-      const pk  = publicKey  || `pubkey-${studentAddr.slice(2,10)}`;
-      const svc = serviceUrl || `https://did.service/${studentAddr.slice(2,10)}`;
-      const tx  = await contract.registerDID(pk, svc);
+
+
+
+      const pk = publicKey || `pubkey-${studentAddr.slice(2, 10)}`;
+      const svc = serviceUrl || `https://did.service/${studentAddr.slice(2, 10)}`;
+      const tx = await contract.registerDID(pk, svc);
       await tx.wait();
-      setDidStatus({ type: "success", msg: `✅ DID đã được đăng ký!\nTx: ${tx.hash}` });
+      setDidStatus({ type: "success", msg: ` DID đã được đăng ký!\nTx: ${tx.hash}` });
     } catch (e) {
       setDidStatus({ type: "error", msg: e.reason || e.message });
     }
@@ -82,9 +82,9 @@ export default function IssuerPage() {
     setCredLoading(true);
     setCredStatus(null);
     try {
-      const signer   = getSigner();
+      const signer = getSigner();
 
-      // 1. Tạo VC JSON theo chuẩn W3C
+
       const vcJson = JSON.stringify({
         "@context": ["https://www.w3.org/2018/credentials/v1"],
         type: ["VerifiableCredential", credType],
@@ -100,14 +100,14 @@ export default function IssuerPage() {
         },
       });
 
-      // 2. Hash VC
+
       const vcHash = ethers.keccak256(ethers.toUtf8Bytes(vcJson));
 
-      // 3. Tính expiresAt (0 = không hết hạn)
+
       const expiry = expiresAt === "0" ? 0n
         : BigInt(Math.floor(new Date(expiresAt).getTime() / 1000));
 
-      // 4. Gọi smart contract
+
       const contract = new ethers.Contract(
         CONTRACT_ADDRESSES.CREDENTIAL_REGISTRY, CREDENTIAL_REGISTRY_ABI, signer
       );
@@ -117,10 +117,10 @@ export default function IssuerPage() {
       setLastIssuedHash(vcHash);
       setCredStatus({
         type: "success",
-        msg: `✅ VC đã được phát hành!\nHash: ${vcHash.slice(0, 20)}...\nTx: ${tx.hash}`,
+        msg: ` VC đã được phát hành!\nHash: ${vcHash.slice(0, 20)}...\nTx: ${tx.hash}`,
       });
 
-      // Lưu VC vào localStorage để Holder có thể xem
+
       const normalizedHolder = holderAddr.toLowerCase();
       const existing = JSON.parse(localStorage.getItem(`vcs_${normalizedHolder}`) || "[]");
       existing.push({ vcJson, vcHash, issuedAt: Date.now() });
@@ -138,9 +138,9 @@ export default function IssuerPage() {
     setResolveStatus(null);
     setResolvedDoc(null);
     try {
-      const signer   = getSigner();
+      const signer = getSigner();
       const contract = new ethers.Contract(CONTRACT_ADDRESSES.DID_REGISTRY, DID_REGISTRY_ABI, signer);
-      const doc      = await contract.resolveDID(resolveAddr);
+      const doc = await contract.resolveDID(resolveAddr);
       if (!doc.isActive && doc.owner === ethers.ZeroAddress) {
         setResolveStatus({ type: "warning", msg: "Địa chỉ này chưa đăng ký DID." });
       } else {
@@ -154,9 +154,9 @@ export default function IssuerPage() {
 
   return (
     <div style={{ animation: "fadeIn 0.3s ease" }}>
-      {/* Page Header */}
+      { }
       <div className="page-header">
-        <div className="page-badge badge-issuer">🏛️ ISSUER</div>
+        <div className="page-badge badge-issuer">️ ISSUER</div>
         <h1 className="page-title">Cấp phát Định danh</h1>
         <p className="page-subtitle">
           Đăng ký DID cho sinh viên và phát hành Verifiable Credential (bằng cấp, chứng chỉ).
@@ -167,9 +167,9 @@ export default function IssuerPage() {
         </p>
       </div>
 
-      {/* ── Phần 1: Đăng ký DID ── */}
+      { }
       <div className="section card">
-        <div className="card-title">🆔 Đăng ký DID cho sinh viên</div>
+        <div className="card-title"> Đăng ký DID cho sinh viên</div>
         <p style={{ color: "var(--text-secondary)", fontSize: 13, marginBottom: 18, lineHeight: 1.6 }}>
           Gọi <code style={{ color: "var(--cyan)" }}>registerDID()</code> — DID sẽ được tạo dưới dạng{" "}
           <code style={{ color: "var(--purple)" }}>did:ethr:&lt;address&gt;</code> và lưu on-chain.
@@ -211,7 +211,7 @@ export default function IssuerPage() {
 
         {didStatus && (
           <div className={`alert alert-${didStatus.type === "success" ? "success" : "error"}`} style={{ whiteSpace: "pre-wrap" }}>
-            {didStatus.type === "success" ? "✅" : "❌"} {didStatus.msg}
+            {didStatus.type === "success" ? "" : ""} {didStatus.msg}
           </div>
         )}
 
@@ -221,13 +221,13 @@ export default function IssuerPage() {
           onClick={handleRegisterDID}
           disabled={didLoading}
         >
-          {didLoading ? <><span className="spinner" /> Đang xử lý...</> : "🆔 Đăng ký DID"}
+          {didLoading ? <><span className="spinner" /> Đang xử lý...</> : " Đăng ký DID"}
         </button>
       </div>
 
-      {/* ── Phần 2: Tra cứu DID ── */}
+      { }
       <div className="section card">
-        <div className="card-title">🔍 Tra cứu DID Document</div>
+        <div className="card-title"> Tra cứu DID Document</div>
         <div style={{ display: "flex", gap: 12, alignItems: "flex-end" }}>
           <div className="form-group" style={{ flex: 1, margin: 0 }}>
             <label className="form-label">Địa chỉ ví cần tra cứu</label>
@@ -246,7 +246,7 @@ export default function IssuerPage() {
             disabled={resolveLoading}
             style={{ flexShrink: 0 }}
           >
-            {resolveLoading ? <><span className="spinner" /> Đang tìm...</> : "🔍 Tra cứu"}
+            {resolveLoading ? <><span className="spinner" /> Đang tìm...</> : " Tra cứu"}
           </button>
         </div>
 
@@ -284,9 +284,9 @@ export default function IssuerPage() {
         )}
       </div>
 
-      {/* ── Phần 3: Phát hành VC ── */}
+      { }
       <div className="section card">
-        <div className="card-title">🎓 Phát hành Verifiable Credential</div>
+        <div className="card-title"> Phát hành Verifiable Credential</div>
         <p style={{ color: "var(--text-secondary)", fontSize: 13, marginBottom: 18, lineHeight: 1.6 }}>
           Hash của VC JSON sẽ được ghi lên blockchain qua{" "}
           <code style={{ color: "var(--cyan)" }}>issueCredential()</code>. Nội dung VC lưu off-chain (localStorage).
@@ -360,7 +360,7 @@ export default function IssuerPage() {
           onClick={handleIssueCredential}
           disabled={credLoading}
         >
-          {credLoading ? <><span className="spinner" /> Đang phát hành...</> : "🎓 Phát hành VC lên Blockchain"}
+          {credLoading ? <><span className="spinner" /> Đang phát hành...</> : " Phát hành VC lên Blockchain"}
         </button>
       </div>
     </div>

@@ -1,6 +1,6 @@
-// ============================================================
-// Contract ABIs và địa chỉ – tự động load từ artifact
-// ============================================================
+
+
+
 
 export const CONTRACT_ADDRESSES = {
   DID_REGISTRY:          "0xF1B88f2283A503C9F498da1Eb7C788BA8E4e9432",

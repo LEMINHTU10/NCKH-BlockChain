@@ -1,0 +1,37 @@
+services:
+  ganache:
+    image: trufflesuite/ganache:latest
+    ports:
+      - "7545:7545"
+    command: >
+      --server.port 7545
+      --chain.networkId 1337
+      --chain.chainId 1337
+      --wallet.accounts="0x3f8a8fbb57a4e9be12c4b461e3d604d7e4bfde4d483cdff6fb3659ce293ac435,1000000000000000000000"
+      --wallet.accounts="0x686f1268a22265ea495b6c3b01924f611b60eceb2188c06850152d03029cfb49,1000000000000000000000"
+      --wallet.accounts="0x76bbddfc7a86679fc6653e21bf0241a1e4950097e689e3ae9e1810a45d6de7c8,1000000000000000000000"
+      --wallet.accounts="0x2b5baa9a728510da115caae6a7072dae350ea520171fdb2f93843b8d10d30242,1000000000000000000000"
+    networks:
+      - did-network
+
+  frontend:
+    build:
+      context: ./did-frontend
+      dockerfile: Dockerfile
+    ports:
+      - "5173:5173"
+    volumes:
+      # Map the host directory to the container so that live reloading works
+      - ./did-frontend:/app
+      # Ignore node_modules from host, use the one installed in container
+      - /app/node_modules
+    environment:
+      - CHOKIDAR_USEPOLLING=true # Helps with file watching inside Docker
+    depends_on:
+      - ganache
+    networks:
+      - did-network
+
+networks:
+  did-network:
+    driver: bridge

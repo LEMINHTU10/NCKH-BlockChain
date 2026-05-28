@@ -16,17 +16,17 @@ import {
 export default function HolderPage() {
   const account = getAccount();
 
-  // ── State ────────────────────────────────────────────────
+
   const [vcs, setVcs] = useState([]);
   const [loading, setLoading] = useState(false);
   const [selectedVc, setSelectedVc] = useState(null);
-  
+
   const [vpJson, setVpJson] = useState("");
   const [vpLoading, setVpLoading] = useState(false);
-  
+
   const canvasRef = useRef(null);
 
-  // ── Load VCs ─────────────────────────────────────────────
+
   useEffect(() => {
     if (account) loadVCs();
   }, [account]);
@@ -41,10 +41,10 @@ export default function HolderPage() {
         provider
       );
 
-      // Lấy danh sách hash VC on-chain của Holder
+
       const hashesOnChain = await contract.getHolderCredentials(account);
-      
-      // Lấy danh sách VC chi tiết từ localStorage
+
+
       const normalizedAccount = account.toLowerCase();
       const localVCs = JSON.parse(localStorage.getItem(`vcs_${normalizedAccount}`) || "[]");
 
@@ -52,8 +52,8 @@ export default function HolderPage() {
       for (let i = 0; i < hashesOnChain.length; i++) {
         const hash = hashesOnChain[i];
         const details = await contract.getCredential(hash);
-        
-        // Tìm thông tin off-chain tương ứng
+
+
         const local = localVCs.find((vc) => vc.vcHash === hash);
         let vcData = null;
         if (local) {
@@ -67,24 +67,24 @@ export default function HolderPage() {
           issuedAt: details.issuedAt,
           expiresAt: details.expiresAt,
           isRevoked: details.isRevoked,
-          vcData, // Thông tin chi tiết (nếu có trong localStorage)
+          vcData,
         });
       }
 
-      setVcs(combined.reverse()); // Mới nhất lên đầu
+      setVcs(combined.reverse());
     } catch (e) {
       console.error("Lỗi khi tải VC:", e);
     }
     setLoading(false);
   }
 
-  // ── Generate VP ──────────────────────────────────────────
+
   async function handleGenerateVP(vc) {
     setSelectedVc(vc);
     setVpLoading(true);
     setVpJson("");
-    
-    // Clear QR code cũ
+
+
     if (canvasRef.current) {
       const ctx = canvasRef.current.getContext("2d");
       ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
@@ -95,13 +95,13 @@ export default function HolderPage() {
       if (vc.isRevoked) throw new Error("VC này đã bị thu hồi, không thể tạo VP.");
 
       const signer = getSigner();
-      
-      // Tạo Payload cho VP
+
+
       const payload = {
         vcHash: vc.hash,
         holder: account,
         timestamp: Date.now(),
-        // Thực tế VP có thể chứa toàn bộ vcData, ở đây ta gom lại
+
         vcDetails: vc.vcData
       };
 
@@ -118,23 +118,23 @@ export default function HolderPage() {
           verificationMethod: `did:ethr:${account}#controller`,
           proofPurpose: "authentication",
           proofValue: signature,
-          payload: messageToSign // Để Verifier có thể parse dễ dàng trong demo
+          payload: messageToSign
         }
       };
 
       const vpString = JSON.stringify(vp, null, 2);
       setVpJson(vpString);
 
-      // Tạo QR Code
+
       if (canvasRef.current) {
-        // Thu gọn JSON để vừa QR (QR có giới hạn dung lượng)
+
         const compactVp = JSON.stringify({
           holder: account,
           vcHash: vc.hash,
           sig: signature,
           ts: payload.timestamp
         });
-        
+
         await QRCode.toCanvas(canvasRef.current, compactVp, {
           width: 250,
           margin: 2,
@@ -151,9 +151,9 @@ export default function HolderPage() {
   if (!account) {
     return (
       <div className="connect-prompt">
-        <div className="connect-prompt-icon">🎓</div>
+        <div className="connect-prompt-icon"></div>
         <h2>Kết nối ví MetaMask</h2>
-        <p>Vui lòng kết nối ví MetaMask để sử dụng giao diện Holder (Sinh viên). Chọn tài khoản Holder (Account #2).</p>
+        <p>Vui lòng kết nối ví MetaMask để sử dụng giao diện Holder.</p>
       </div>
     );
   }
@@ -161,7 +161,7 @@ export default function HolderPage() {
   return (
     <div style={{ animation: "fadeIn 0.3s ease" }}>
       <div className="page-header">
-        <div className="page-badge badge-holder">🎓 HOLDER</div>
+        <div className="page-badge badge-holder"> HOLDER</div>
         <h1 className="page-title">Quản lý Định danh</h1>
         <p className="page-subtitle">
           Xem danh sách bằng cấp/chứng chỉ (VC) và tạo Verifiable Presentation (VP) để chia sẻ.
@@ -173,12 +173,12 @@ export default function HolderPage() {
       </div>
 
       <div className="card-grid">
-        {/* Cột trái: Danh sách VC */}
+        { }
         <div className="card" style={{ display: "flex", flexDirection: "column" }}>
           <div className="card-title">
-            📚 Bằng cấp / Chứng chỉ của bạn
+            Bằng cấp / Chứng chỉ của bạn
             <button className="btn btn-outline btn-sm" onClick={loadVCs} style={{ marginLeft: "auto", padding: "4px 8px" }}>
-              🔄 Tải lại
+              Tải lại
             </button>
           </div>
 
@@ -186,14 +186,14 @@ export default function HolderPage() {
             <div style={{ padding: 40, textAlign: "center" }}><span className="spinner" /> Đang tải...</div>
           ) : vcs.length === 0 ? (
             <div className="empty-state">
-              <div className="empty-state-icon">📄</div>
+              <div className="empty-state-icon"></div>
               Bạn chưa có chứng chỉ nào.
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 12, overflowY: "auto", maxHeight: "500px", paddingRight: 4 }}>
               {vcs.map((vc) => (
-                <div 
-                  key={vc.hash} 
+                <div
+                  key={vc.hash}
                   className={`vc-card ${selectedVc?.hash === vc.hash ? "selected" : ""}`}
                   onClick={() => handleGenerateVP(vc)}
                 >
@@ -220,24 +220,24 @@ export default function HolderPage() {
           )}
         </div>
 
-        {/* Cột phải: Chi tiết & Tạo VP */}
+        { }
         <div className="card">
-          <div className="card-title">🔗 Chia sẻ thông tin (Tạo VP)</div>
-          
+          <div className="card-title"> Chia sẻ thông tin (Tạo VP)</div>
+
           {!selectedVc ? (
             <div className="empty-state" style={{ marginTop: 40 }}>
-              <div className="empty-state-icon">👆</div>
+              <div className="empty-state-icon"></div>
               Chọn một chứng chỉ bên trái để tạo Verifiable Presentation.
             </div>
           ) : (
             <div>
               <p style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 16 }}>
-                Bạn đang tạo VP cho chứng chỉ <strong>{selectedVc.type}</strong>. 
+                Bạn đang tạo VP cho chứng chỉ <strong>{selectedVc.type}</strong>.
                 Hệ thống sẽ yêu cầu bạn ký xác nhận bằng MetaMask để chứng minh quyền sở hữu.
               </p>
 
               {vpLoading && <div style={{ textAlign: "center", padding: 20 }}><span className="spinner" /> Đang tạo chữ ký...</div>}
-              
+
               <div className="qr-container" style={{ display: vpJson && !vpLoading ? "flex" : "none" }}>
                 <span style={{ fontSize: 14, fontWeight: 600 }}>Mã QR Xác thực</span>
                 <canvas ref={canvasRef}></canvas>
@@ -250,15 +250,15 @@ export default function HolderPage() {
                 <div style={{ marginTop: 20 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: "var(--cyan)" }}>Verifiable Presentation (JSON):</div>
                   <div className="vp-display">{vpJson}</div>
-                  <button 
-                    className="btn btn-outline btn-full" 
+                  <button
+                    className="btn btn-outline btn-full"
                     style={{ marginTop: 12 }}
                     onClick={() => {
                       navigator.clipboard.writeText(vpJson);
                       alert("Đã copy JSON!");
                     }}
                   >
-                    📋 Copy JSON
+                    Copy JSON
                   </button>
                 </div>
               )}

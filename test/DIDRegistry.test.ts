@@ -1,22 +1,22 @@
 import { expect } from "chai";
 import hre from "hardhat";
 
-// Lấy ethers và networkHelpers từ Hardhat Runtime Environment (Hardhat 3 pattern)
+
 const { ethers } = await hre.network.create();
 
-// ===========================================================================
-// TEST SUITE: DIDRegistry
-// ===========================================================================
+
+
+
 describe("DIDRegistry", function () {
-  // -------------------------------------------------------------------------
-  // Biến dùng chung trong mỗi test
-  // -------------------------------------------------------------------------
+  
+  
+  
   let didRegistry: Awaited<ReturnType<typeof ethers.deployContract>>;
   let issuer: Awaited<ReturnType<typeof ethers.getSigner>>;
   let holder: Awaited<ReturnType<typeof ethers.getSigner>>;
   let verifier: Awaited<ReturnType<typeof ethers.getSigner>>;
 
-  // Deploy một instance mới trước mỗi test để đảm bảo trạng thái sạch
+  
   beforeEach(async function () {
     const signers = await ethers.getSigners();
     issuer   = signers[0];
@@ -27,9 +27,9 @@ describe("DIDRegistry", function () {
     await didRegistry.waitForDeployment();
   });
 
-  // ===========================================================================
-  // Nhóm 1: Đăng ký DID (registerDID)
-  // ===========================================================================
+  
+  
+  
   describe("registerDID", function () {
     it("Holder co the dang ky DID moi", async function () {
       await didRegistry
@@ -50,7 +50,7 @@ describe("DIDRegistry", function () {
         .connect(holder)
         .registerDID("pubkey_xyz", "https://svc.io");
 
-      // Chỉ kiểm tra event tồn tại (không kiểm tra tham số DID vì phụ thuộc vào địa chỉ động)
+      
       await expect(tx).to.emit(didRegistry, "DIDRegistered");
     });
 
@@ -77,12 +77,12 @@ describe("DIDRegistry", function () {
     });
   });
 
-  // ===========================================================================
-  // Nhóm 2: Cập nhật DID (updateDIDDocument)
-  // ===========================================================================
+  
+  
+  
   describe("updateDIDDocument", function () {
     beforeEach(async function () {
-      // Đăng ký DID ban đầu
+      
       await didRegistry.connect(holder).registerDID("pk_v1", "svc_v1");
     });
 
@@ -109,9 +109,9 @@ describe("DIDRegistry", function () {
     });
   });
 
-  // ===========================================================================
-  // Nhóm 3: Vô hiệu hóa DID (deactivateDID)
-  // ===========================================================================
+  
+  
+  
   describe("deactivateDID", function () {
     beforeEach(async function () {
       await didRegistry.connect(holder).registerDID("pk_active", "svc_active");
@@ -143,9 +143,9 @@ describe("DIDRegistry", function () {
     });
   });
 
-  // ===========================================================================
-  // Nhóm 4: Tra cứu DID (resolveDID)
-  // ===========================================================================
+  
+  
+  
   describe("resolveDID", function () {
     it("Tra cuu DID Document cua nguoi chua dang ky tra ve trang thai inactive", async function () {
       const doc = await didRegistry.resolveDID(verifier.address);
@@ -155,7 +155,7 @@ describe("DIDRegistry", function () {
 
     it("Bat ky ai cung co the tra cuu DID (view function)", async function () {
       await didRegistry.connect(holder).registerDID("pk_public", "svc_public");
-      // Gọi bởi verifier (người ngoài) vẫn thành công
+      
       const doc = await didRegistry.connect(verifier).resolveDID(holder.address);
       expect(doc.isActive).to.equal(true);
     });

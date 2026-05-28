@@ -11,7 +11,7 @@ function App() {
   const [isConnecting, setIsConnecting] = useState(false);
 
   useEffect(() => {
-    // Lắng nghe sự kiện đổi tài khoản từ MetaMask
+    
     onAccountChange((newAccount) => {
       setAccount(newAccount);
     });
@@ -31,7 +31,7 @@ function App() {
 
   return (
     <div className="app-wrapper">
-      {/* Navbar */}
+      {}
       <nav className="navbar">
         <div className="navbar-brand">
           <div className="navbar-logo">D</div>
@@ -43,19 +43,19 @@ function App() {
             className={`nav-tab ${activeTab === 'issuer' ? 'active' : ''}`}
             onClick={() => setActiveTab('issuer')}
           >
-            <span className="tab-icon">🏛️</span> Issuer
+            <span className="tab-icon">️</span> Issuer
           </button>
           <button
             className={`nav-tab ${activeTab === 'holder' ? 'active' : ''}`}
             onClick={() => setActiveTab('holder')}
           >
-            <span className="tab-icon">🎓</span> Holder
+            <span className="tab-icon"></span> Holder
           </button>
           <button
             className={`nav-tab ${activeTab === 'verifier' ? 'active' : ''}`}
             onClick={() => setActiveTab('verifier')}
           >
-            <span className="tab-icon">🏢</span> Verifier
+            <span className="tab-icon"></span> Verifier
           </button>
         </div>
 
@@ -73,7 +73,7 @@ function App() {
         </div>
       </nav>
 
-      {/* Main Content Area */}
+      {}
       <main className="main-content">
         {activeTab === 'issuer' && <IssuerPage />}
         {activeTab === 'holder' && <HolderPage />}

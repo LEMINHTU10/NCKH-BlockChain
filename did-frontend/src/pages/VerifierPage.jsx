@@ -7,15 +7,15 @@ export default function VerifierPage() {
   const account = getAccount();
 
   const [vpInput, setVpInput] = useState("");
-  const [verifyStatus, setVerifyStatus] = useState(null); // { valid: bool, reason: string, details: obj }
+  const [verifyStatus, setVerifyStatus] = useState(null);
   const [loading, setLoading] = useState(false);
 
   if (!account) {
     return (
       <div className="connect-prompt">
-        <div className="connect-prompt-icon">🏢</div>
+        <div className="connect-prompt-icon"></div>
         <h2>Kết nối ví MetaMask</h2>
-        <p>Vui lòng kết nối ví MetaMask để sử dụng giao diện Verifier (Nhà tuyển dụng). Chọn tài khoản Verifier (Account #3).</p>
+        <p>Vui lòng kết nối ví MetaMask để sử dụng giao diện Verifier</p>
       </div>
     );
   }
@@ -30,7 +30,7 @@ export default function VerifierPage() {
     setVerifyStatus(null);
 
     try {
-      // 1. Parse JSON input (có thể là VP full hoặc Compact VP từ QR)
+
       let parsed;
       try {
         parsed = JSON.parse(vpInput);
@@ -43,20 +43,20 @@ export default function VerifierPage() {
       let signature = "";
       let payloadToVerify = "";
 
-      // Hỗ trợ cả 2 dạng: Full VP (từ nút copy) và Compact VP (từ QR code)
+
       if (parsed.proof && parsed.proof.payload) {
-        // Dạng Full VP W3C
+
         signature = parsed.proof.proofValue;
         payloadToVerify = parsed.proof.payload;
         const payloadObj = JSON.parse(payloadToVerify);
         vcHash = payloadObj.vcHash;
         holderAddr = payloadObj.holder;
       } else if (parsed.sig && parsed.vcHash) {
-        // Dạng Compact VP (QR Code)
+
         signature = parsed.sig;
         vcHash = parsed.vcHash;
         holderAddr = parsed.holder;
-        // Tái tạo lại message đã ký
+
         payloadToVerify = JSON.stringify({
           vcHash: parsed.vcHash,
           holder: parsed.holder,
@@ -70,13 +70,13 @@ export default function VerifierPage() {
         throw new Error("Không tìm thấy vcHash hoặc địa chỉ holder trong VP.");
       }
 
-      // 2. Xác thực chữ ký off-chain (Kiểm tra xem người gửi có đúng là holder không)
+
       const recoveredAddr = ethers.verifyMessage(payloadToVerify, signature);
       if (recoveredAddr.toLowerCase() !== holderAddr.toLowerCase()) {
         throw new Error("Chữ ký số không hợp lệ! VP này đã bị giả mạo.");
       }
 
-      // 3. Gọi Smart Contract xác thực on-chain
+
       const signer = getSigner();
       const contract = new ethers.Contract(
         CONTRACT_ADDRESSES.IDENTITY_VERIFIER,
@@ -84,13 +84,13 @@ export default function VerifierPage() {
         signer
       );
 
-      // Gọi staticCall để lấy kết quả (không tốn gas, không thay đổi state)
-      // Trong thực tế, có thể gọi transaction (tốn gas) để ghi Audit Log on-chain
-      // Ở đây demo gọi transaction để trigger event và lưu audit log
+
+
+
       const tx = await contract.verifyIdentity(holderAddr, vcHash);
       const receipt = await tx.wait();
 
-      // Đọc event IdentityVerified từ receipt
+
       const event = receipt.logs.find(
         (log) => log.fragment && log.fragment.name === "IdentityVerified"
       );
@@ -99,10 +99,10 @@ export default function VerifierPage() {
       let reason = "Không xác định";
 
       if (event) {
-        isValid = event.args[3]; // result (bool)
-        reason = event.args[4];  // reason (string)
+        isValid = event.args[3];
+        reason = event.args[4];
       } else {
-        // Fallback: Thử gọi staticCall nếu không bắt được event
+
         const [valid, res] = await contract.verifyIdentity.staticCall(holderAddr, vcHash);
         isValid = valid;
         reason = res;
@@ -128,7 +128,7 @@ export default function VerifierPage() {
   return (
     <div style={{ animation: "fadeIn 0.3s ease" }}>
       <div className="page-header">
-        <div className="page-badge badge-verifier">🏢 VERIFIER</div>
+        <div className="page-badge badge-verifier"> VERIFIER</div>
         <h1 className="page-title">Xác thực Danh tính</h1>
         <p className="page-subtitle">
           Nhập Verifiable Presentation (VP) do ứng viên cung cấp để kiểm tra tính hợp lệ trên Blockchain.
@@ -140,10 +140,10 @@ export default function VerifierPage() {
       </div>
 
       <div className="card-grid">
-        {/* Cột trái: Nhập VP */}
+        { }
         <div className="card">
-          <div className="card-title">📥 Nhập dữ liệu Verifiable Presentation</div>
-          
+          <div className="card-title"> Nhập dữ liệu Verifiable Presentation</div>
+
           <div className="form-group">
             <label className="form-label">Dán mã JSON hoặc Compact VP từ QR</label>
             <textarea
@@ -160,18 +160,18 @@ export default function VerifierPage() {
             onClick={handleVerify}
             disabled={loading}
           >
-            {loading ? <><span className="spinner" /> Đang kiểm tra trên Blockchain...</> : "🔍 Bắt đầu Xác thực"}
+            {loading ? <><span className="spinner" /> Đang kiểm tra trên Blockchain...</> : " Bắt đầu Xác thực"}
           </button>
         </div>
 
-        {/* Cột phải: Kết quả */}
+        { }
         <div className="card" style={{ display: "flex", flexDirection: "column" }}>
-          <div className="card-title">📊 Kết quả Kiểm định</div>
-          
+          <div className="card-title"> Kết quả Kiểm định</div>
+
           <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center" }}>
             {!verifyStatus && !loading && (
               <div className="empty-state">
-                <div className="empty-state-icon">🛡️</div>
+                <div className="empty-state-icon">️</div>
                 Nhập VP và nhấn Xác thực để xem kết quả.
               </div>
             )}
@@ -186,17 +186,17 @@ export default function VerifierPage() {
             {verifyStatus && !loading && (
               <div className={`verify-result ${verifyStatus.valid ? "valid" : "invalid"}`}>
                 <div className="verify-icon">
-                  {verifyStatus.valid ? "✅" : "❌"}
+                  {verifyStatus.valid ? "" : ""}
                 </div>
                 <h3 className="verify-title" style={{ color: verifyStatus.valid ? "var(--green)" : "var(--red)" }}>
                   {verifyStatus.valid ? "HỢP LỆ" : "KHÔNG HỢP LỆ"}
                 </h3>
                 <p className="verify-reason">{verifyStatus.reason}</p>
-                
+
                 {verifyStatus.valid && verifyStatus.details && verifyStatus.details.verifiableCredential && (
                   <div style={{ marginTop: 24, textAlign: "left", background: "rgba(0,0,0,0.2)", padding: 16, borderRadius: 12 }}>
                     <h4 style={{ fontSize: 13, textTransform: "uppercase", color: "var(--text-secondary)", marginBottom: 12 }}>Thông tin trích xuất:</h4>
-                    
+
                     {(() => {
                       const vc = verifyStatus.details.verifiableCredential[0];
                       const subj = vc.credentialSubject;
@@ -229,9 +229,9 @@ export default function VerifierPage() {
                 )}
 
                 {verifyStatus.valid && (!verifyStatus.details || !verifyStatus.details.verifiableCredential) && (
-                   <div style={{ marginTop: 24, textAlign: "left", background: "rgba(0,0,0,0.2)", padding: 16, borderRadius: 12 }}>
-                      <p style={{fontSize: 13, color: "var(--green)", textAlign: "center"}}>Xác thực thành công qua Compact VP (QR Code).</p>
-                   </div>
+                  <div style={{ marginTop: 24, textAlign: "left", background: "rgba(0,0,0,0.2)", padding: 16, borderRadius: 12 }}>
+                    <p style={{ fontSize: 13, color: "var(--green)", textAlign: "center" }}>Xác thực thành công qua Compact VP (QR Code).</p>
+                  </div>
                 )}
               </div>
             )}

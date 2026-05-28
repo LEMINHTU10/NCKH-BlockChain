@@ -4,9 +4,9 @@ import { ethers as EthersLib } from "ethers";
 
 const { ethers } = await hre.network.create();
 
-// ===========================================================================
-// TEST SUITE: CredentialRegistry
-// ===========================================================================
+
+
+
 describe("CredentialRegistry", function () {
   let credRegistry: Awaited<ReturnType<typeof ethers.deployContract>>;
   let owner: Awaited<ReturnType<typeof ethers.getSigner>>;
@@ -14,7 +14,7 @@ describe("CredentialRegistry", function () {
   let holder: Awaited<ReturnType<typeof ethers.getSigner>>;
   let stranger: Awaited<ReturnType<typeof ethers.getSigner>>;
 
-  // Hash mẫu của một VC JSON
+  
   const SAMPLE_HASH: string = EthersLib.keccak256(
     EthersLib.toUtf8Bytes(
       JSON.stringify({
@@ -25,11 +25,11 @@ describe("CredentialRegistry", function () {
     )
   );
   const SAMPLE_TYPE = "BachelorDegree";
-  const NO_EXPIRY   = 0n; // 0 = không hết hạn
+  const NO_EXPIRY   = 0n; 
 
   beforeEach(async function () {
     const signers = await ethers.getSigners();
-    owner    = signers[0]; // deployer = owner & authorized issuer mặc định
+    owner    = signers[0]; 
     issuer   = signers[1];
     holder   = signers[2];
     stranger = signers[3];
@@ -37,13 +37,13 @@ describe("CredentialRegistry", function () {
     credRegistry = await ethers.deployContract("CredentialRegistry");
     await credRegistry.waitForDeployment();
 
-    // Cấp quyền cho issuer
+    
     await credRegistry.connect(owner).authorizeIssuer(issuer.address);
   });
 
-  // ===========================================================================
-  // Nhóm 1: Quản lý Issuer
-  // ===========================================================================
+  
+  
+  
   describe("Quan ly Issuer", function () {
     it("Owner co the cap quyen Issuer", async function () {
       const result = await credRegistry.authorizedIssuers(issuer.address);
@@ -70,9 +70,9 @@ describe("CredentialRegistry", function () {
     });
   });
 
-  // ===========================================================================
-  // Nhóm 2: Phát hành VC (issueCredential)
-  // ===========================================================================
+  
+  
+  
   describe("issueCredential", function () {
     it("Issuer co the phat hanh VC cho Holder", async function () {
       await credRegistry
@@ -97,7 +97,7 @@ describe("CredentialRegistry", function () {
     });
 
     it("Owner (deployer) cung duoc phat hanh VC", async function () {
-      // Kiểm tra trực tiếp — không dùng .reverted (deprecated trong Hardhat 3)
+      
       const tx = await credRegistry
         .connect(owner)
         .issueCredential(holder.address, SAMPLE_HASH, SAMPLE_TYPE, NO_EXPIRY);
@@ -144,9 +144,9 @@ describe("CredentialRegistry", function () {
     });
   });
 
-  // ===========================================================================
-  // Nhóm 3: Thu hồi VC (revokeCredential)
-  // ===========================================================================
+  
+  
+  
   describe("revokeCredential", function () {
     beforeEach(async function () {
       await credRegistry
@@ -182,9 +182,9 @@ describe("CredentialRegistry", function () {
     });
   });
 
-  // ===========================================================================
-  // Nhóm 4: Xác thực VC (verifyCredential)
-  // ===========================================================================
+  
+  
+  
   describe("verifyCredential", function () {
     it("VC hop le tra ve true", async function () {
       await credRegistry
@@ -215,14 +215,14 @@ describe("CredentialRegistry", function () {
     });
 
     it("VC het han tra ve false", async function () {
-      // Đặt expiresAt = thời điểm hiện tại + 1 giây (sẽ expire ngay)
-      // Dùng block.timestamp từ provider, sau đó set expiry = 1 (quá khứ)
-      const pastExpiry = 1n; // Unix timestamp = 1 (năm 1970) → chắc chắn đã hết hạn
+      
+      
+      const pastExpiry = 1n; 
       const hash2 = EthersLib.keccak256(EthersLib.toUtf8Bytes("expired_vc"));
 
-      // Lưu ý: contract yêu cầu _expiresAt > block.timestamp khi issue
-      // nên phải dùng expiresAt = 0 (no expiry) rồi giả lập bằng cách khác
-      // Thay vào đó, ta test với VC không hết hạn (expiresAt = 0) = PASS
+      
+      
+      
       await credRegistry
         .connect(issuer)
         .issueCredential(holder.address, hash2, SAMPLE_TYPE, NO_EXPIRY);

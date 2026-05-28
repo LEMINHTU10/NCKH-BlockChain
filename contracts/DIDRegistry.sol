@@ -1,45 +1,40 @@
-// SPDX-License-Identifier: MIT
+
 pragma solidity ^0.8.20;
 
-/**
- * @title DIDRegistry
- * @dev Quản lý việc đăng ký, cập nhật và vô hiệu hóa DID của sinh viên.
- */
+
 contract DIDRegistry {
 
-    // Cấu trúc dữ liệu lưu trữ một Định danh Kỹ thuật số (DID Document)
+    
     struct DIDDocument {
-        string did;             // VD: did:ethr:0xABC...
-        address owner;          // Địa chỉ ví của sinh viên (người sở hữu)
-        string publicKey;       // Khóa công khai dạng chuỗi JSON
-        string serviceEndpoint; // URL endpoint (tùy chọn)
-        uint256 createdAt;      // Thời điểm tạo
-        uint256 updatedAt;      // Thời điểm cập nhật cuối
-        bool isActive;          // Trạng thái kích hoạt
+        string did;             
+        address owner;          
+        string publicKey;       
+        string serviceEndpoint; 
+        uint256 createdAt;      
+        uint256 updatedAt;      
+        bool isActive;          
     }
 
-    // Biến trạng thái
+    
     mapping(address => DIDDocument) private didDocuments;
     mapping(string => address) private didToAddress;
 
-    // Các sự kiện (Events) để Frontend (React) có thể lắng nghe
+    
     event DIDRegistered(address indexed owner, string did);
     event DIDUpdated(address indexed owner, string did);
     event DIDDeactivated(address indexed owner, string did);
 
-    // Modifier để đảm bảo chỉ owner mới được sửa DID của họ
+    
     modifier onlyOwner() {
         require(didDocuments[msg.sender].owner == msg.sender, "Khong phai chu so huu DID");
         _;
     }
 
-    /**
-     * @dev Đăng ký một DID mới cho người gọi hàm (msg.sender)
-     */
+    
     function registerDID(string memory _publicKey, string memory _serviceEndpoint) public {
         require(!didDocuments[msg.sender].isActive, "DID da ton tai va dang hoat dong");
 
-        // Tạo chuỗi DID cơ bản (Ví dụ đơn giản, thực tế có thể phức tạp hơn)
+        
         string memory newDid = string(abi.encodePacked("did:ethr:", toAsciiString(msg.sender)));
 
         DIDDocument memory newDoc = DIDDocument({
@@ -58,9 +53,7 @@ contract DIDRegistry {
         emit DIDRegistered(msg.sender, newDid);
     }
 
-    /**
-     * @dev Cập nhật thông tin DID Document
-     */
+    
     function updateDIDDocument(string memory _publicKey, string memory _serviceEndpoint) public onlyOwner {
         require(didDocuments[msg.sender].isActive, "DID da bi vo hieu hoa");
 
@@ -71,9 +64,7 @@ contract DIDRegistry {
         emit DIDUpdated(msg.sender, didDocuments[msg.sender].did);
     }
 
-    /**
-     * @dev Vô hiệu hóa (Deactivate) một DID
-     */
+    
     function deactivateDID() public onlyOwner {
         require(didDocuments[msg.sender].isActive, "DID da bi vo hieu hoa tu truoc");
         
@@ -83,14 +74,12 @@ contract DIDRegistry {
         emit DIDDeactivated(msg.sender, didDocuments[msg.sender].did);
     }
 
-    /**
-     * @dev Tra cứu DID Document bằng địa chỉ ví (Hàm view, không tốn gas)
-     */
+    
     function resolveDID(address _owner) public view returns (DIDDocument memory) {
         return didDocuments[_owner];
     }
 
-    // Hàm phụ trợ chuyển đổi địa chỉ thành chuỗi string (Dùng nội bộ)
+    
     function toAsciiString(address x) internal pure returns (string memory) {
         bytes memory s = new bytes(40);
         for (uint i = 0; i < 20; i++) {
