@@ -1,57 +1,84 @@
-# Sample Hardhat 3 Beta Project (`mocha` and `ethers`)
+# Hệ thống Quản lý Danh tính Phân tán (DID System)
 
-This project showcases a Hardhat 3 Beta project using `mocha` for tests and the `ethers` library for Ethereum interactions.
+Đây là dự án Nghiên cứu Khoa học (NCKH) xây dựng Hệ thống Quản lý Danh tính và Cấp phát Văn bằng dựa trên công nghệ Blockchain và mô hình Danh tính Phi tập trung (DID - Decentralized Identifiers).
 
-To learn more about the Hardhat 3 Beta, please visit the [Getting Started guide](https://hardhat.org/docs/getting-started#getting-started-with-hardhat-3). To share your feedback, join our [Hardhat 3 Beta](https://hardhat.org/hardhat3-beta-telegram-group) Telegram group or [open an issue](https://github.com/NomicFoundation/hardhat/issues/new) in our GitHub issue tracker.
+## Các Thành viên Phát triển
+- **Lê Minh Tú:** Viết Smart Contract & Hardhat Tests
+- **Nguyễn Xuân Vinh:** Tích hợp Backend (Web3/Ethers.js) & Hardhat Scripts
+- **Lương HM Anh:** Phát triển Frontend (React.js, Vite, Tailwind)
+- **Nguyễn Lương An:** Đóng gói Docker & Triển khai môi trường ảo hóa (Ubuntu)
+- **Duy Mạnh:** Cấu hình Mạng (Ganache), Đánh giá Hiệu năng & Bảo mật
 
-## Project Overview
+---
 
-This example project includes:
+## 1. Yêu cầu Hệ thống (Prerequisites)
+Để chạy dự án, máy tính của bạn cần cài đặt sẵn:
+- **Docker Desktop** (hoặc Docker Engine trên Linux).
+- **Git** (để clone mã nguồn).
 
-- A simple Hardhat configuration file.
-- Foundry-compatible Solidity unit tests.
-- TypeScript integration tests using `mocha` and ethers.js
-- Examples demonstrating how to connect to different types of networks, including locally simulating OP mainnet.
+---
 
-## Usage
+## 2. Hướng dẫn Cài đặt & Khởi chạy (Dành cho Giám khảo / Giảng viên)
 
-### Running Tests
+Dự án đã được tự động hóa hoàn toàn thông qua Docker Compose. Bạn chỉ cần thực hiện 2 lệnh sau:
 
-To run all the tests in the project, execute the following command:
-
-```shell
-npx hardhat test
+### Bước 1: Tải mã nguồn về máy
+```bash
+git clone https://github.com/LEMINHTU10/NCKH-BlockChain.git
+cd NCKH-BlockChain
 ```
 
-You can also selectively run the Solidity or `mocha` tests:
+### Bước 2: Khởi động toàn bộ Hệ thống
+```bash
+# Trên Linux/Ubuntu:
+sudo ./deploy.sh
 
-```shell
-npx hardhat test solidity
-npx hardhat test mocha
+# Trên Windows (Powershell/CMD):
+docker-compose up -d
 ```
 
-### Make a deployment to Sepolia
+Sau khi chạy lệnh trên, Docker sẽ tự động:
+1. Khởi tạo mạng Blockchain nội bộ (Ganache) tại port `7545`.
+2. Khởi tạo giao diện Web Frontend (React) tại port `5173`.
 
-This project includes an example Ignition module to deploy the contract. You can deploy this module to a locally simulated chain or to Sepolia.
+> **Lưu ý:** Nếu chạy lần đầu tiên, Docker sẽ mất khoảng 1-2 phút để tải hình ảnh (images) Node.js và Truffle Ganache về máy. Các lần sau sẽ khởi động ngay lập tức (< 2 giây).
 
-To run the deployment to a local chain:
+---
 
-```shell
-npx hardhat ignition deploy ignition/modules/Counter.ts
+## 3. Trải nghiệm Hệ thống
+
+- Mở trình duyệt và truy cập: **http://localhost:5173**
+- Trong thư mục gốc, có sẵn file `deployed-addresses.json` và `.env` chứa các địa chỉ Smart Contract đã được deploy để frontend gọi đến.
+
+---
+
+## 4. Dành cho Nhà phát triển (Môi trường Dev)
+
+Nếu bạn muốn chỉnh sửa mã nguồn hoặc chạy các kịch bản đánh giá bảo mật (Scripts):
+
+### 4.1. Chạy các kịch bản (Scripts) đo lường
+Bạn cần cài đặt Node.js, sau đó chạy:
+```bash
+npm install
+
+# Đo lường Gas Cost
+npx hardhat run scripts/measure-gas.ts
+
+# Đánh giá hiệu năng (Thời gian phản hồi)
+npx hardhat run scripts/measure-performance.ts
+
+# Mô phỏng phòng thủ Replay Attack
+npx hardhat run scripts/simulate-replay-attack.ts
 ```
 
-To run the deployment to Sepolia, you need an account with funds to send the transaction. The provided Hardhat configuration includes a Configuration Variable called `SEPOLIA_PRIVATE_KEY`, which you can use to set the private key of the account you want to use.
+### 4.2. Khởi động Frontend ở chế độ Dev
+Mã nguồn thư mục `did-frontend` được mount trực tiếp vào Docker Container. Bạn có thể mở mã nguồn trên VS Code máy thật, chỉnh sửa file và giao diện Web trên Browser sẽ **tự động cập nhật (Hot-reload)** mà không cần restart Docker.
 
-You can set the `SEPOLIA_PRIVATE_KEY` variable using the `hardhat-keystore` plugin or by setting it as an environment variable.
+---
 
-To set the `SEPOLIA_PRIVATE_KEY` config variable using `hardhat-keystore`:
-
-```shell
-npx hardhat keystore set SEPOLIA_PRIVATE_KEY
-```
-
-After setting the variable, you can run the deployment with the Sepolia network:
-
-```shell
-npx hardhat ignition deploy --network sepolia ignition/modules/Counter.ts
-```
+## Cấu trúc Thư mục Chính
+- `/contracts`: Mã nguồn Smart Contract viết bằng Solidity.
+- `/did-frontend`: Mã nguồn giao diện Web (React + Vite).
+- `/scripts`: Các kịch bản tự động hóa (Deploy, Đo Gas, Test Hiệu năng, Mô phỏng Tấn công).
+- `/test`: Unit Test cho Smart Contract.
+- `docker-compose.yml`: Cấu hình ảo hóa hệ thống.
