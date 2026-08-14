@@ -12,11 +12,10 @@ import {
   CREDENTIAL_REGISTRY_ABI,
 } from "../utils/contracts";
 
-export default function IssuerPage() {
-  const account = getAccount();
+export default function IssuerPage({ account: propAccount }) {
+  const account = propAccount || getAccount();
 
 
-  const [studentAddr, setStudentAddr] = useState("");
   const [publicKey, setPublicKey] = useState("");
   const [serviceUrl, setServiceUrl] = useState("");
   const [didStatus, setDidStatus] = useState(null);
@@ -167,23 +166,28 @@ export default function IssuerPage() {
         </p>
       </div>
 
-      { }
+      {/* ── Đăng ký DID tổ chức ── */}
       <div className="section card">
-        <div className="card-title"> Đăng ký DID cho sinh viên</div>
+        <div className="card-title">🏛️ Đăng ký DID Tổ chức</div>
         <p style={{ color: "var(--text-secondary)", fontSize: 13, marginBottom: 18, lineHeight: 1.6 }}>
-          Gọi <code style={{ color: "var(--cyan)" }}>registerDID()</code> — DID sẽ được tạo dưới dạng{" "}
-          <code style={{ color: "var(--purple)" }}>did:ethr:&lt;address&gt;</code> và lưu on-chain.
+          Đăng ký Danh tính phi tập trung (DID) cho <strong>tổ chức này</strong> (ví đang kết nối).
+          DID được tạo dưới dạng{" "}
+          <code style={{ color: "var(--purple)" }}>did:ethr:{shortAddr(account)}</code> và lưu on-chain.
+          <br />
+          <span style={{ color: "var(--text-muted)", fontSize: 12 }}>
+            💡 Sinh viên tự đăng ký DID của họ tại trang <strong>Holder</strong>.
+          </span>
         </p>
 
         <div className="card-grid">
           <div className="form-group">
-            <label className="form-label">Địa chỉ ví sinh viên *</label>
+            <label className="form-label">Public Key (tuỳ chọn — để trống sẽ tự tạo)</label>
             <input
-              id="did-student-addr"
+              id="did-public-key"
               className="form-input"
-              placeholder="0x..."
-              value={studentAddr}
-              onChange={e => setStudentAddr(e.target.value)}
+              placeholder="VD: pubkey-abc123 hoặc base64 encoded key"
+              value={publicKey}
+              onChange={e => setPublicKey(e.target.value)}
             />
           </div>
           <div className="form-group">
@@ -191,22 +195,11 @@ export default function IssuerPage() {
             <input
               id="did-service-url"
               className="form-input"
-              placeholder="https://service.example.com"
+              placeholder="https://issuer.university.edu/did"
               value={serviceUrl}
               onChange={e => setServiceUrl(e.target.value)}
             />
           </div>
-        </div>
-
-        <div className="form-group">
-          <label className="form-label">Public Key (tuỳ chọn – để trống sẽ tự tạo)</label>
-          <input
-            id="did-public-key"
-            className="form-input"
-            placeholder="VD: pubkey-abc123 hoặc base64 encoded key"
-            value={publicKey}
-            onChange={e => setPublicKey(e.target.value)}
-          />
         </div>
 
         {didStatus && (
