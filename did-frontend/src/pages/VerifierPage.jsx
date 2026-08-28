@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+﻿import { useState, useEffect } from "react";
 import { ethers } from "ethers";
 import { getSigner, getAccount, shortAddr, formatTimestamp } from "../utils/web3";
 import {
@@ -63,6 +63,14 @@ export default function VerifierPage({ account: propAccount }) {
       if (recoveredAddr.toLowerCase() !== holderAddr.toLowerCase()) {
         throw new Error("❌ Chữ ký số không hợp lệ — VP này đã bị giả mạo hoặc chỉnh sửa.");
       }
+      /* Buoc 2.1: Kiem tra tinh toan ven noi dung VC (Anti-Tamper Check) */
+      if (parsed.verifiableCredential && parsed.verifiableCredential[0]) {
+        const vcObj = parsed.verifiableCredential[0];
+        const computedHash = ethers.keccak256(ethers.toUtf8Bytes(JSON.stringify(vcObj)));
+        if (computedHash.toLowerCase() !== vcHash.toLowerCase()) {
+          throw new Error('❌ Phát hiện giả mạo: Nội dung Bằng cấp (VC) đã bị chỉnh sửa! Mã Hash không khớp với Blockchain.');
+        }
+      }
 
       /* Bước 3: Xác thực on-chain
          ─ Nếu có ví MetaMask → gọi verifyIdentity() (ghi audit log)
@@ -126,7 +134,19 @@ export default function VerifierPage({ account: propAccount }) {
 
       setVerifyStatus({ valid: isValid, reason, details: parsed, steps, withWallet: !!account });
     } catch (e) {
-      setVerifyStatus({ valid: false, reason: e.reason || e.message, details: null, steps: null });
+      let msg = e.reason || e.message || "Lỗi xác thực không xác định.";
+      if (msg.includes("CURVE") || msg.includes("signature") || msg.includes("invalid bytes") || msg.includes("must be") || msg.includes("bad signature")) {
+        msg = "❌ Chữ ký số không hợp lệ — Chữ ký hoặc dữ liệu đã bị chỉnh sửa/làm giả.";
+      } else if (msg.includes("user rejected") || msg.includes("ACTION_REJECTED")) {
+        msg = "❌ Người dùng đã từ chối ký giao dịch trên MetaMask.";
+      }
+      setVerifyStatus({
+        valid: false,
+        reason: msg,
+        details: null,
+        steps: buildSteps(false, false, false, false),
+        withWallet: !!account,
+      });
     }
     setLoading(false);
   }

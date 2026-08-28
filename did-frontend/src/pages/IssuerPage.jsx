@@ -1,4 +1,4 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import { ethers } from "ethers";
 import {
   getSigner,
@@ -32,6 +32,16 @@ export default function IssuerPage({ account: propAccount }) {
   const [credStatus, setCredStatus] = useState(null);
   const [credLoading, setCredLoading] = useState(false);
   const [lastIssuedHash, setLastIssuedHash] = useState("");
+  // ── Thu hồi VC ──────────────────────────────────────────
+  const [revokeHolderAddr, setRevokeHolderAddr] = useState("");
+  const [revokeCredList, setRevokeCredList] = useState([]);
+  const [revokeCredLoading, setRevokeCredLoading] = useState(false);
+  const [revokeStatus, setRevokeStatus] = useState(null);
+  const [revokeLoading, setRevokeLoading] = useState(false);
+
+  // ── Kiểm tra authorized issuer ──────────────────────────
+  const [isAuthorized, setIsAuthorized] = useState(null);
+  const [authChecking, setAuthChecking] = useState(false);
 
 
   const [resolveAddr, setResolveAddr] = useState("");
@@ -51,9 +61,103 @@ export default function IssuerPage({ account: propAccount }) {
 
 
 
+  // ── Handler kiểm tra authorized issuer ──────────────────
+  async function handleCheckAuthorized() {
+    setAuthChecking(true);
+    try {
+      const provider = new ethers.JsonRpcProvider(import.meta.env.VITE_GANACHE_URL || "http://localhost:7545");
+      const credRegistry = new ethers.Contract(
+        CONTRACT_ADDRESSES.CREDENTIAL_REGISTRY,
+        CREDENTIAL_REGISTRY_ABI,
+        provider
+      );
+      const result = await credRegistry.authorizedIssuers(account);
+      setIsAuthorized(result);
+    } catch (e) {
+      setIsAuthorized(false);
+    }
+    setAuthChecking(false);
+  }
+
+  // ── Handler thu hồi VC ──────────────────────────────────
+  async function handleLoadHolderCreds() {
+    if (!revokeHolderAddr.trim() || !/^0x[0-9a-fA-F]{40}$/.test(revokeHolderAddr.trim())) {
+      setRevokeStatus({ type: 'error', msg: 'Dia chi vi khong hop le (can 0x + 40 ky tu hex).' });
+      return;
+    }
+    setRevokeCredLoading(true);
+    setRevokeStatus(null);
+    setRevokeCredList([]);
+    try {
+      const provider = new ethers.JsonRpcProvider(
+        import.meta.env.VITE_GANACHE_URL || 'http://localhost:7545'
+      );
+      const credRegistry = new ethers.Contract(
+        CONTRACT_ADDRESSES.CREDENTIAL_REGISTRY,
+        CREDENTIAL_REGISTRY_ABI,
+        provider
+      );
+      const hashes = await credRegistry.getHolderCredentials(revokeHolderAddr.trim());
+      const list = [];
+      for (const h of hashes) {
+        const d = await credRegistry.getCredential(h);
+        list.push({
+          hash: h,
+          type: d.credentialType,
+          issuedAt: Number(d.issuedAt),
+          isRevoked: d.isRevoked,
+          issuer: d.issuer,
+        });
+      }
+      setRevokeCredList(list);
+      if (list.length === 0)
+        setRevokeStatus({ type: 'error', msg: 'Khong tim thay bang cap nao cho dia chi nay tren blockchain.' });
+    } catch (err) {
+      setRevokeStatus({ type: 'error', msg: 'Loi tai du lieu: ' + (err?.message || String(err)) });
+    }
+    setRevokeCredLoading(false);
+  }
+
+  async function handleRevokeCredential(hashParam) {
+    const targetHash = hashParam || "";
+    if (!targetHash || !/^0x[0-9a-fA-F]{64}$/.test(targetHash.trim()))
+      return setRevokeStatus({ type: "error", msg: "Hash khong hop le." });
+
+    const confirmed = window.confirm(
+      `⚠️ Thu hồi bằng cấp?\n\nHash: ${targetHash}\n\nKhông thể hoàn tác!`
+    );
+    if (!confirmed) return;
+
+    setRevokeLoading(true);
+    setRevokeStatus(null);
+    try {
+      const signer = getSigner();
+      const credRegistry = new ethers.Contract(
+        CONTRACT_ADDRESSES.CREDENTIAL_REGISTRY,
+        CREDENTIAL_REGISTRY_ABI,
+        signer
+      );
+      const tx = await credRegistry.revokeCredential(targetHash.trim());
+      await tx.wait();
+      setRevokeStatus({ type: "success", msg: `✅ Đã thu hồi thành công!\nTx: ${tx.hash}` });
+      // refresh list after revoke
+      await handleLoadHolderCreds();
+    } catch (err) {
+      const msg = err?.reason || err?.message || "Lỗi không xác định";
+      if (msg.includes("Chi Issuer goc"))
+        setRevokeStatus({ type: "error", msg: "❌ Bạn không phải Issuer đã cấp bằng này." });
+      else if (msg.includes("da bi thu hoi"))
+        setRevokeStatus({ type: "error", msg: "❌ Bằng này đã bị thu hồi trước đó rồi." });
+      else if (msg.includes("khong ton tai"))
+        setRevokeStatus({ type: "error", msg: "❌ Không tìm thấy VC với hash này trên blockchain." });
+      else
+        setRevokeStatus({ type: "error", msg: `❌ Lỗi: ${msg}` });
+    }
+    setRevokeLoading(false);
+  }
   async function handleRegisterDID() {
-    if (!studentAddr || !ethers.isAddress(studentAddr))
-      return setDidStatus({ type: "error", msg: "Địa chỉ ví sinh viên không hợp lệ." });
+    if (!account || !ethers.isAddress(account))
+      return setDidStatus({ type: "error", msg: "Địa chỉ ví không hợp lệ." });
     setDidLoading(true);
     setDidStatus(null);
     try {
@@ -62,8 +166,8 @@ export default function IssuerPage({ account: propAccount }) {
 
 
 
-      const pk = publicKey || `pubkey-${studentAddr.slice(2, 10)}`;
-      const svc = serviceUrl || `https://did.service/${studentAddr.slice(2, 10)}`;
+      const pk = publicKey || `pubkey-${account.slice(2, 10)}`;
+      const svc = serviceUrl || `https://did.service/${account.slice(2, 10)}`;
       const tx = await contract.registerDID(pk, svc);
       await tx.wait();
       setDidStatus({ type: "success", msg: ` DID đã được đăng ký!\nTx: ${tx.hash}` });
@@ -355,6 +459,130 @@ export default function IssuerPage({ account: propAccount }) {
         >
           {credLoading ? <><span className="spinner" /> Đang phát hành...</> : " Phát hành VC lên Blockchain"}
         </button>
+
+      </div>
+
+      {/* Kiem tra Quyen Issuer */}
+      <div className="section card">
+        <div className="card-title">🔐 Kiểm tra Quyền Issuer</div>
+        <p style={{ color: 'var(--text-secondary)', fontSize: 13, marginBottom: 14 }}>
+          Kiểm tra xem địa chỉ ví của bạn có được Owner cấp phép phát hành bằng cấp hay không.
+        </p>
+        <button
+          id="btn-check-authorized"
+          className="btn btn-outline"
+          onClick={handleCheckAuthorized}
+          disabled={authChecking}
+          style={{ marginBottom: 14 }}
+        >
+          {authChecking ? <><span className="spinner" /> Đang kiểm tra...</> : '🔍 Kiểm tra quyền Issuer'}
+        </button>
+        {isAuthorized !== null && (
+          <div className={`alert alert-${isAuthorized ? 'success' : 'error'}`}>
+            {isAuthorized
+              ? '✅ Địa chỉ của bạn ĐÃ được cấp phép — có thể phát hành bằng cấp.'
+              : '❌ Địa chỉ CHƯA được cấp phép.'}
+          </div>
+        )}
+      </div>
+
+      {/* Thu hoi Credential */}
+      <div className="section card">
+        <div className="card-title" style={{ color: '#ef4444' }}>🚫 Thu hồi Bằng cấp (Revoke VC)</div>
+        <p style={{ color: 'var(--text-secondary)', fontSize: 13, marginBottom: 16, lineHeight: 1.6 }}>
+          Nhập địa chỉ ví sinh viên để xem danh sách bằng cấp, sau đó chọn bằng cần thu hồi.
+          <strong> Hành động không thể hoàn tác!</strong>
+        </p>
+
+        {/* Buoc 1: tim sinh vien */}
+        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', marginBottom: 16 }}>
+          <div className="form-group" style={{ flex: 1, margin: 0 }}>
+            <label className="form-label">Địa chỉ ví Sinh viên (Holder) *</label>
+            <input
+              id="revoke-holder-addr"
+              className="form-input"
+              placeholder="0x..."
+              value={revokeHolderAddr}
+              onChange={e => setRevokeHolderAddr(e.target.value)}
+            />
+          </div>
+          <button
+            id="btn-load-holder-creds"
+            className="btn btn-outline"
+            onClick={handleLoadHolderCreds}
+            disabled={revokeCredLoading}
+            style={{ flexShrink: 0 }}
+          >
+            {revokeCredLoading
+              ? <><span className="spinner" /> Đang tải...</>
+              : '🔍 Tải danh sách'}
+          </button>
+        </div>
+
+        {revokeStatus && (
+          <div
+            className={`alert alert-${revokeStatus.type === 'success' ? 'success' : 'error'}`}
+            style={{ whiteSpace: 'pre-wrap', marginBottom: 12 }}
+          >
+            {revokeStatus.msg}
+          </div>
+        )}
+
+        {/* Buoc 2: danh sach bang cap */}
+        {revokeCredList.length > 0 && (
+          <div>
+            <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 10 }}>
+              Tìm thấy <strong>{revokeCredList.length}</strong> bằng cấp — chọn để thu hồi:
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {revokeCredList.map((cred) => (
+                <div
+                  key={cred.hash}
+                  style={{
+                    background: cred.isRevoked
+                      ? 'rgba(239,68,68,0.07)'
+                      : 'rgba(255,255,255,0.03)',
+                    border: cred.isRevoked
+                      ? '1px solid rgba(239,68,68,0.35)'
+                      : '1px solid var(--border)',
+                    borderRadius: 10,
+                    padding: '12px 16px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 14,
+                    flexWrap: 'wrap',
+                  }}
+                >
+                  <div style={{ flex: 1, minWidth: 200 }}>
+                    <div style={{ fontWeight: 600, marginBottom: 4 }}>
+                      🎓 {cred.type}
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'monospace', wordBreak: 'break-all' }}>
+                      {cred.hash}
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>
+                      Cấp lúc: {new Date(cred.issuedAt * 1000).toLocaleString('vi-VN')}
+                    </div>
+                  </div>
+                  <div style={{ flexShrink: 0 }}>
+                    {cred.isRevoked ? (
+                      <span className="status-badge status-inactive">⛔ Đã thu hồi</span>
+                    ) : (
+                      <button
+                        className="btn btn-sm"
+                        onClick={() => handleRevokeCredential(cred.hash)}
+                        disabled={revokeLoading}
+                        style={{ background: '#ef4444', color: '#fff', padding: '6px 16px', fontSize: 13 }}
+                      >
+                        {revokeLoading ? <span className="spinner" /> : '🚫 Thu hồi'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

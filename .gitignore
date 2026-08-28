@@ -1,31 +1,36 @@
-# Node modules
+﻿# Node modules
 /node_modules
+did-frontend/node_modules/
 
 # Compilation output
 /dist
+did-frontend/dist/
 
 # pnpm deploy output
 /bundle
 
 # Hardhat Build Artifacts
 /artifacts
-
-# Hardhat compilation (v2) support directory
 /cache
-
-# Typechain output
 /types
 
 # Environment files
 .env
 .env.*
 !.env.example
+did-frontend/.env
+did-frontend/.env.*
+!did-frontend/.env.example
 
-# Hardhat coverage reports
+# Hardhat coverage & logs
 /coverage
-
-# Gas snapshot files
 /.gas-snapshot
-
-# Snapshot cheatcodes output
 /snapshots
+*.log
+
+# AI & Local assistant files
+coder.txt
+.agents/
+.gemini/
+.vscode/
+

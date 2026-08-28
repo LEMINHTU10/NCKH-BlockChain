@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 
 pragma solidity ^0.8.20;
 
@@ -79,7 +80,7 @@ contract CredentialRegistry {
         bytes32 _hash,
         string calldata _type,
         uint256 _expiresAt
-    ) external {
+    ) external onlyAuthorizedIssuer {
         require(_holder != address(0), "Dia chi holder khong hop le");
         require(_hash != bytes32(0), "Hash khong hop le");
         require(credentials[_hash].issuer == address(0), "VC nay da ton tai");
