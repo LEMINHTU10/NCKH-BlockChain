@@ -1,6 +1,7 @@
-import { verifySelectiveDisclosure } from "../utils/selectiveDisclosure";
-﻿import { useState, useEffect } from "react";
+﻿import { verifySelectiveDisclosure } from "../utils/selectiveDisclosure";
+import { useState, useEffect, useRef } from "react";
 import { ethers } from "ethers";
+import jsQR from "jsqr";
 import { getSigner, getAccount, shortAddr, formatTimestamp } from "../utils/web3";
 import {
   CONTRACT_ADDRESSES,
@@ -15,27 +16,135 @@ const getReadProvider = () => new ethers.JsonRpcProvider(GANACHE_RPC);
 export default function VerifierPage({ account: propAccount }) {
   const account = propAccount !== undefined ? propAccount : getAccount();
 
-  /* ── Verify state ──────────────────────────────────── */
-  const [vpInput, setVpInput]       = useState("");
+  /* ── Verify state ────────────────────────────────────────────────────────── */
+  const [vpInput, setVpInput]           = useState("");
   const [verifyStatus, setVerifyStatus] = useState(null);
-  const [loading, setLoading]       = useState(false);
+  const [loading, setLoading]           = useState(false);
 
-  /* ── Audit log state ───────────────────────────────── */
-  const [auditLog, setAuditLog]     = useState([]);
+  /* ── Camera & File Scanner state ─────────────────────────────────────────── */
+  const [isCameraActive, setIsCameraActive] = useState(false);
+  const [cameraError, setCameraError]       = useState(null);
+  const videoRef      = useRef(null);
+  const canvasRef     = useRef(null);
+  const fileInputRef  = useRef(null);
+  const streamRef     = useRef(null);
+  const animFrameId   = useRef(null);
+
+  /* ── Audit log state ─────────────────────────────────────────────────────── */
+  const [auditLog, setAuditLog]         = useState([]);
   const [auditLoading, setAuditLoading] = useState(false);
-  const [showAudit, setShowAudit]   = useState(false);
+  const [showAudit, setShowAudit]       = useState(false);
 
-  /* ─────────────────────────────────────────────────────
-     Xác thực VP
-  ───────────────────────────────────────────────────── */
-  async function handleVerify() {
-    if (!vpInput.trim()) { alert("Vui lòng nhập JSON hoặc mã QR của VP!"); return; }
-    setLoading(true); setVerifyStatus(null);
+  // Dọn dẹp camera khi component unmount
+  useEffect(() => {
+    return () => {
+      stopCamera();
+    };
+  }, []);
+
+  /* ── Camera Scanning Handlers ────────────────────────────────────────────── */
+  async function startCamera() {
+    setIsCameraActive(true);
+    setCameraError(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment", width: { ideal: 640 }, height: { ideal: 480 } },
+      });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.setAttribute("playsinline", "true");
+        await videoRef.current.play();
+        requestAnimationFrame(scanVideoFrame);
+      }
+    } catch (err) {
+      console.error("Camera access error:", err);
+      setCameraError("Không thể bật Camera: " + (err.message || "Bị từ chối quyền truy cập"));
+      setIsCameraActive(false);
+    }
+  }
+
+  function stopCamera() {
+    if (animFrameId.current) {
+      cancelAnimationFrame(animFrameId.current);
+      animFrameId.current = null;
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+    setIsCameraActive(false);
+  }
+
+  function scanVideoFrame() {
+    if (!videoRef.current || videoRef.current.readyState !== videoRef.current.HAVE_ENOUGH_DATA) {
+      animFrameId.current = requestAnimationFrame(scanVideoFrame);
+      return;
+    }
+    const canvas = canvasRef.current || document.createElement("canvas");
+    const video = videoRef.current;
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const code = jsQR(imageData.data, imageData.width, imageData.height, {
+      inversionAttempts: "dontInvert",
+    });
+
+    if (code && code.data) {
+      stopCamera();
+      setVpInput(code.data);
+      handleVerify(code.data);
+    } else {
+      animFrameId.current = requestAnimationFrame(scanVideoFrame);
+    }
+  }
+
+  function handleImageUpload(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0);
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const code = jsQR(imageData.data, imageData.width, imageData.height);
+        if (code && code.data) {
+          setVpInput(code.data);
+          handleVerify(code.data);
+        } else {
+          alert("❌ Không tìm thấy mã QR trong hình ảnh. Vui lòng chọn ảnh chụp mã QR rõ nét hơn!");
+        }
+      };
+      img.src = event.target.result;
+    };
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  }
+
+  /* ── Xác thực VP ─────────────────────────────────────────────────────────── */
+  async function handleVerify(directInput = null) {
+    const rawInput = typeof directInput === "string" ? directInput : vpInput;
+    if (!rawInput.trim()) {
+      alert("Vui lòng nhập JSON hoặc quét mã QR của VP!");
+      return;
+    }
+    setLoading(true);
+    setVerifyStatus(null);
 
     try {
       let parsed;
-      try { parsed = JSON.parse(vpInput); }
-      catch { throw new Error("Định dạng JSON không hợp lệ."); }
+      try {
+        parsed = JSON.parse(rawInput);
+      } catch {
+        throw new Error("Định dạng JSON không hợp lệ.");
+      }
 
       let vcHash = "", holderAddr = "", signature = "", payloadToVerify = "";
       let isSelective = false;
@@ -102,8 +211,7 @@ export default function VerifierPage({ account: propAccount }) {
       if (expiresAt) {
         if (Date.now() > Number(expiresAt)) {
           const expiredDate = new Date(Number(expiresAt)).toLocaleString("vi-VN");
-          throw new Error(`❌ Mã xuất trình (VP) đã HẾT HẠN vào lúc ${expiredDate}!
-(Chống tấn công phát lại: Vui lòng yêu cầu sinh viên tạo mã mới).`);
+          throw new Error(`⚠️ MÃ XUẤT TRÌNH (VP) ĐÃ HẾT HẠN vào lúc ${expiredDate}!\n(Chống tấn công phát lại: Vui lòng yêu cầu sinh viên tạo mã mới).`);
         }
       }
 
@@ -119,9 +227,8 @@ export default function VerifierPage({ account: propAccount }) {
         throw new Error("❌ Chữ ký số không khớp với Holder — VP này đã bị giả mạo hoặc chỉnh sửa.");
       }
 
-      // 4. Kiểm tra tính toàn vẹn (Tamper Detection)
+      // 4. Xác thực Toán học Selective Disclosure (ZKP-lite)
       if (isSelective) {
-        // Xác minh cam kết toán học Salted Claims
         const selectiveData = {
           presentedClaims: parsed.presentedClaims || parsed.disclosed || {},
           blindedHashes: parsed.blindedHashes || parsed.blinded || {},
@@ -171,14 +278,16 @@ export default function VerifierPage({ account: propAccount }) {
           reason = "DID của Holder không tồn tại hoặc đã bị vô hiệu hóa.";
           steps = buildSteps(true, false, false, false);
           setVerifyStatus({ valid: false, reason, details: parsed, steps });
-          setLoading(false); return;
+          setLoading(false);
+          return;
         }
 
         const [vcValid, vcReason] = await credContract.verifyCredential(vcHash);
         if (!vcValid) {
           steps = buildSteps(true, true, false, false);
           setVerifyStatus({ valid: false, reason: vcReason, details: parsed, steps });
-          setLoading(false); return;
+          setLoading(false);
+          return;
         }
 
         const cred = await credContract.getCredential(vcHash);
@@ -186,11 +295,12 @@ export default function VerifierPage({ account: propAccount }) {
           reason = "VC này không thuộc về Holder được khai báo trong VP.";
           steps = buildSteps(true, true, true, false);
           setVerifyStatus({ valid: false, reason, details: parsed, steps });
-          setLoading(false); return;
+          setLoading(false);
+          return;
         }
 
         isValid = true;
-        reason = "Danh tính hợp lệ.";
+        reason = "Danh tính hợp lệ";
         steps = buildSteps(true, true, true, true);
       }
 
@@ -211,7 +321,7 @@ export default function VerifierPage({ account: propAccount }) {
       if (msg.includes("CURVE") || msg.includes("signature") || msg.includes("invalid bytes") || msg.includes("must be") || msg.includes("bad signature")) {
         msg = "❌ Chữ ký số không hợp lệ — Chữ ký hoặc dữ liệu đã bị chỉnh sửa/làm giả.";
       } else if (msg.includes("user rejected") || msg.includes("ACTION_REJECTED")) {
-        msg = "❌ Người dùng đã từ chối ký giao dịch trên MetaMask.";
+        msg = "⚠️ Người dùng đã từ chối ký giao dịch trên MetaMask.";
       }
       setVerifyStatus({
         valid: false,
@@ -224,9 +334,7 @@ export default function VerifierPage({ account: propAccount }) {
     setLoading(false);
   }
 
-  /* ─────────────────────────────────────────────────────
-     Audit log (chỉ khi có ví, đọc từ IdentityVerifier)
-  ───────────────────────────────────────────────────── */
+  /* ── Audit log ───────────────────────────────────────────────────────────── */
   async function loadAuditLog() {
     setAuditLoading(true);
     try {
@@ -237,7 +345,6 @@ export default function VerifierPage({ account: propAccount }) {
       const count = await ivContract.getAuditLogCount();
       const total = Number(count);
       const records = [];
-      /* Lấy 20 bản ghi gần nhất */
       for (let i = Math.max(0, total - 20); i < total; i++) {
         const r = await ivContract.getAuditRecord(i);
         records.unshift({
@@ -251,106 +358,201 @@ export default function VerifierPage({ account: propAccount }) {
       }
       setAuditLog(records);
       setShowAudit(true);
-    } catch (e) { console.error("loadAuditLog:", e); }
+    } catch (e) {
+      console.error("loadAuditLog:", e);
+    }
     setAuditLoading(false);
   }
 
   function buildSteps(sig, did, vc, holder) {
     return [
-      { label: "① Xác thực chữ ký số (off-chain)", ok: sig },
-      { label: "② DID Holder đang hoạt động (on-chain)", ok: did },
-      { label: "③ VC hợp lệ, chưa hết hạn / thu hồi (on-chain)", ok: vc },
-      { label: "④ VC thuộc đúng Holder", ok: holder },
+      { label: "✅ Xác thực chữ ký số (off-chain)", ok: sig },
+      { label: "✅ DID Holder đang hoạt động (on-chain)", ok: did },
+      { label: "✅ VC hợp lệ, chưa hết hạn / thu hồi (on-chain)", ok: vc },
+      { label: "✅ VC thuộc đúng Holder", ok: holder },
     ];
   }
 
-  /* ─────────────────────────────────────────────────────
-     Render
-  ───────────────────────────────────────────────────── */
+  /* ── Render ──────────────────────────────────────────────────────────────── */
   return (
     <div style={{ animation: "fadeIn 0.3s ease" }}>
       {/* Page header */}
       <div className="page-header">
-        <div className="page-badge badge-verifier">🔎 VERIFIER — Doanh nghiệp</div>
-        <h1 className="page-title">Xác thực Bằng cấp</h1>
+        <div className="page-badge badge-verifier">🏢 VERIFIER — Cổng Doanh nghiệp & Tuyển dụng</div>
+        <h1 className="page-title">Xác thực Bằng cấp & Danh tính</h1>
         <p className="page-subtitle">
-          Dán Verifiable Presentation (VP) do ứng viên cung cấp để kiểm tra tính hợp lệ.
+          Quét mã QR hoặc dán Verifiable Presentation (VP) của sinh viên để đối chiếu toàn vẹn với Blockchain.
           <br />
           {account ? (
             <span style={{ color: "var(--green)", fontSize: 13, fontFamily: "JetBrains Mono, monospace" }}>
-              🔐 Đã kết nối ví · {shortAddr(account)} · Kết quả được ghi audit log on-chain
+              🔗 Đã kết nối ví: {shortAddr(account)} — Kết quả tự động ghi Audit Log on-chain
             </span>
           ) : (
-            <span style={{ color: "var(--green)", fontSize: 13 }}>
-              ✅ Chế độ khách · Không cần ví MetaMask · Đọc dữ liệu blockchain trực tiếp
+            <span style={{ color: "var(--cyan)", fontSize: 13 }}>
+              🌐 Chế độ Khách (Không cần ví / Không tốn Gas) — Đọc dữ liệu Blockchain trực tiếp
             </span>
           )}
         </p>
       </div>
 
       <div className="card-grid">
-        {/* ── Cột trái: Input VP ────────────────────────── */}
+        {/* ── Cột trái: Nhập VP / Quét QR ───────────────────────────────────── */}
         <div className="card">
-          <div className="card-title">📄 Nhập Verifiable Presentation</div>
+          <div className="card-title" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <span>📥 Nhập Mã Xuất trình (VP)</span>
+            <span style={{ fontSize: 12, color: "var(--text-muted)" }}>Hỗ trợ QR & JSON</span>
+          </div>
+
+          {/* Quick Action Buttons: Camera / Upload / Paste */}
+          <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+            <button
+              type="button"
+              className={`btn btn-sm ${isCameraActive ? "btn-danger" : "btn-primary"}`}
+              style={{ flex: 1, fontSize: 12, padding: "8px 10px", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
+              onClick={isCameraActive ? stopCamera : startCamera}
+            >
+              <span>{isCameraActive ? "⏹️" : "📷"}</span>
+              {isCameraActive ? "Tắt Camera" : "Quét bằng Camera"}
+            </button>
+
+            <button
+              type="button"
+              className="btn btn-sm btn-outline"
+              style={{ flex: 1, fontSize: 12, padding: "8px 10px", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <span>🖼️</span> Tải ảnh QR
+            </button>
+            <input
+              type="file"
+              ref={fileInputRef}
+              accept="image/*"
+              style={{ display: "none" }}
+              onChange={handleImageUpload}
+            />
+          </div>
+
+          {/* Camera Scanner Viewfinder */}
+          {isCameraActive && (
+            <div style={{
+              position: "relative",
+              borderRadius: 12,
+              overflow: "hidden",
+              border: "2px solid var(--cyan)",
+              boxShadow: "0 0 20px rgba(0, 229, 255, 0.2)",
+              background: "#000",
+              marginBottom: 14,
+              textAlign: "center",
+            }}>
+              <video
+                ref={videoRef}
+                style={{ width: "100%", maxHeight: 240, objectFit: "cover", display: "block" }}
+              />
+              <div style={{
+                position: "absolute",
+                top: "50%",
+                left: "50%",
+                transform: "translate(-50%, -50%)",
+                width: 160,
+                height: 160,
+                border: "2px dashed var(--cyan)",
+                borderRadius: 12,
+                pointerEvents: "none",
+                boxShadow: "0 0 0 9999px rgba(0, 0, 0, 0.35)",
+              }} />
+              <div style={{
+                position: "absolute",
+                bottom: 8,
+                left: 0,
+                right: 0,
+                fontSize: 11,
+                color: "#ffffff",
+                textShadow: "0 1px 3px rgba(0,0,0,0.8)",
+              }}>
+                🎯 Hướng camera về phía mã QR của sinh viên
+              </div>
+            </div>
+          )}
+
+          {cameraError && (
+            <div className="alert alert-error" style={{ fontSize: 12, marginBottom: 12 }}>
+              {cameraError}
+            </div>
+          )}
 
           <div className="form-group">
-            <label className="form-label">Dán VP JSON hoặc Compact VP (từ mã QR)</label>
+            <label className="form-label">Dán chuỗi VP JSON hoặc mã QR:</label>
             <textarea
               id="vp-input"
               className="form-textarea"
-              placeholder={'{\n  "@context": [...],\n  "type": "VerifiablePresentation",\n  "verifiableCredential": [...],\n  "proof": { ... }\n}'}
+              placeholder={'{\n  "selective": true,\n  "holder": "0x1d71...",\n  "vcHash": "0x85e3...",\n  "sig": "0x...",\n  "exp": 1724833200000\n}'}
               value={vpInput}
               onChange={(e) => setVpInput(e.target.value)}
-              style={{ minHeight: 260, fontFamily: "'JetBrains Mono', monospace", fontSize: 12 }}
+              style={{ minHeight: 200, fontFamily: "'JetBrains Mono', monospace", fontSize: 11 }}
             />
           </div>
 
           <button
             id="btn-verify"
             className="btn btn-success btn-full"
-            onClick={handleVerify}
+            onClick={() => handleVerify()}
             disabled={loading}
+            style={{
+              padding: "12px",
+              fontSize: 14,
+              fontWeight: 700,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 8,
+            }}
           >
-            {loading
-              ? <><span className="spinner" /> Đang đối chiếu trên Blockchain...</>
-              : "🔍 Xác thực Danh tính"}
+            {loading ? (
+              <>
+                <span className="spinner" /> Đang đối chiếu trên Blockchain...
+              </>
+            ) : (
+              <>
+                <span>🔍</span> Xác thực Danh tính & Bằng cấp
+              </>
+            )}
           </button>
 
-          {/* Quy trình xác thực */}
-          <div style={{ marginTop: 20, padding: "12px 14px", background: "rgba(255,255,255,0.03)", borderRadius: 10, border: "1px solid var(--border)" }}>
-            <p className="form-label" style={{ marginBottom: 10 }}>Quy trình xác thực (4 bước)</p>
+          {/* Quy trình xác thực 4 bước */}
+          <div style={{ marginTop: 16, padding: "12px 14px", background: "rgba(255,255,255,0.02)", borderRadius: 10, border: "1px solid var(--border)" }}>
+            <p className="form-label" style={{ marginBottom: 8, fontSize: 12 }}>4 Tầng Bảo mật Đối chiếu:</p>
             {[
-              "① Xác thực chữ ký số — off-chain, tức thì",
-              "② Kiểm tra DID Holder — on-chain (DIDRegistry)",
-              "③ Kiểm tra VC hợp lệ — on-chain (CredentialRegistry)",
-              "④ Đối chiếu VC ↔ Holder",
-            ].map(s => (
-              <div key={s} style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 4 }}>{s}</div>
+              "1️⃣ Kiểm tra Thời hạn sống (Time-Bound) & Chống phát lại",
+              "2️⃣ Xác thực Chữ ký số ECDSA (off-chain)",
+              "3️⃣ Tái lập Root Hash Toán học (ZKP-lite)",
+              "4️⃣ Kiểm tra DID & Trạng thái Thu hồi trên Smart Contract",
+            ].map((s) => (
+              <div key={s} style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>{s}</div>
             ))}
-            {account && (
-              <div style={{ fontSize: 11, color: "var(--green)", marginTop: 8 }}>
-                + Kết quả được ghi vào Audit Log on-chain (IdentityVerifier)
-              </div>
-            )}
           </div>
         </div>
 
-        {/* ── Cột phải: Kết quả ─────────────────────────── */}
+        {/* ── Cột phải: Kết quả Kiểm định ───────────────────────────────────── */}
         <div className="card" style={{ display: "flex", flexDirection: "column" }}>
-          <div className="card-title">🧾 Kết quả Kiểm định</div>
+          <div className="card-title">📊 Kết quả Kiểm định Khoa học</div>
 
           <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center" }}>
             {!verifyStatus && !loading && (
               <div className="empty-state">
-                <div className="empty-state-icon">🔎</div>
-                Nhập VP và nhấn Xác thực để xem kết quả.
+                <div className="empty-state-icon">🛡️</div>
+                <div style={{ fontWeight: 600, fontSize: 14, color: "var(--text-primary)", marginBottom: 4 }}>
+                  Chưa có dữ liệu xác thực
+                </div>
+                <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                  Bật camera quét mã QR, tải ảnh lên hoặc dán chuỗi VP để xem kết quả đối chiếu.
+                </div>
               </div>
             )}
 
             {loading && (
-              <div style={{ textAlign: "center", color: "var(--text-secondary)" }}>
-                <span className="spinner" style={{ width: 30, height: 30, borderWidth: 3, marginBottom: 16 }} />
-                <p>Đang đối chiếu Hash với Smart Contract...</p>
+              <div style={{ textAlign: "center", color: "var(--text-secondary)", padding: 40 }}>
+                <span className="spinner" style={{ width: 36, height: 36, borderWidth: 3, marginBottom: 16 }} />
+                <p style={{ fontSize: 13 }}>Đang đối chiếu Root Hash và Smart Contract on-chain...</p>
               </div>
             )}
 
@@ -358,156 +560,187 @@ export default function VerifierPage({ account: propAccount }) {
               <div>
                 {/* Kết quả tổng hợp */}
                 <div className={`verify-result ${verifyStatus.valid ? "valid" : "invalid"}`}>
-                  <div className="verify-icon">{verifyStatus.valid ? "✅" : "❌"}</div>
-                  <h3 className="verify-title" style={{ color: verifyStatus.valid ? "var(--green)" : "var(--red)" }}>
-                    {verifyStatus.valid ? "HỢP LỆ" : "KHÔNG HỢP LỆ"}
-                  </h3>
-                  <p className="verify-reason">{verifyStatus.reason}</p>
-                  {verifyStatus.withWallet && verifyStatus.valid && (
-                    <p style={{ fontSize: 11, color: "var(--green)", marginTop: 6, opacity: 0.8 }}>
-                      ✍ Kết quả đã được ghi vào Audit Log on-chain
-                    </p>
+                  <div className="verify-icon">
+                    {verifyStatus.valid ? "✅" : "❌"}
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 16, fontWeight: 700 }}>
+                      {verifyStatus.valid ? "BẰNG CẤP & DANH TÍNH HỢP LỆ" : "XÁC THỰC THẤT BẠI"}
+                    </div>
+                    <div style={{ fontSize: 12, opacity: 0.9, marginTop: 4 }}>
+                      {verifyStatus.reason}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Badges tính năng nâng cao */}
+                <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+                  {verifyStatus.isSelective && (
+                    <span style={{ fontSize: 11, padding: "4px 8px", borderRadius: 6, background: "rgba(16, 185, 129, 0.15)", color: "var(--green)", border: "1px solid rgba(16, 185, 129, 0.3)" }}>
+                      🛡️ Selective Disclosure (ZKP-lite)
+                    </span>
+                  )}
+                  {verifyStatus.expiresAt && (
+                    <span style={{ fontSize: 11, padding: "4px 8px", borderRadius: 6, background: "rgba(59, 130, 246, 0.15)", color: "#60a5fa", border: "1px solid rgba(59, 130, 246, 0.3)" }}>
+                      ⏱️ Time-Bound Anti-Replay
+                    </span>
+                  )}
+                  {verifyStatus.audience && (
+                    <span style={{ fontSize: 11, padding: "4px 8px", borderRadius: 6, background: "rgba(168, 85, 247, 0.15)", color: "#c084fc", border: "1px solid rgba(168, 85, 247, 0.3)" }}>
+                      🎯 Audience: {verifyStatus.audience}
+                    </span>
                   )}
                 </div>
 
-                {/* Step breakdown */}
-                {verifyStatus.steps && (
-                  <div className="verify-steps">
-                    {verifyStatus.steps.map(step => (
-                      <div key={step.label} className={`verify-step ${step.ok ? "step-ok" : "step-fail"}`}>
-                        <span className="step-icon">{step.ok ? "✔" : "✗"}</span>
-                        <span>{step.label}</span>
+                {/* BẢNG THUỘC TÍNH (TIẾT LỘ VS ẨN AN TOÀN) */}
+                {verifyStatus.valid && verifyStatus.details && (
+                  <div style={{ marginTop: 16 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8, color: "var(--text-primary)" }}>
+                      📋 Dữ liệu thuộc tính nhận được:
+                    </div>
+
+                    {/* Dạng Selective Disclosure */}
+                    {verifyStatus.isSelective ? (
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                        {/* 1. Các trường được tiết lộ */}
+                        {Object.entries(verifyStatus.details.presentedClaims || verifyStatus.details.disclosed || {}).map(([k, item]) => {
+                          const labels = {
+                            studentName: "Họ và tên",
+                            studentId: "Mã sinh viên",
+                            major: "Chuyên ngành",
+                            gpa: "Điểm GPA",
+                            classification: "Xếp loại",
+                            graduationYear: "Năm TN",
+                            dateOfBirth: "Ngày sinh",
+                            nationalId: "Số CCCD",
+                          };
+                          return (
+                            <div
+                              key={k}
+                              style={{
+                                padding: "8px 10px",
+                                background: "rgba(16, 185, 129, 0.08)",
+                                border: "1px solid rgba(16, 185, 129, 0.3)",
+                                borderRadius: 8,
+                                fontSize: 12,
+                              }}
+                            >
+                              <div style={{ fontSize: 10, color: "var(--text-muted)" }}>{labels[k] || k} (Được tiết lộ)</div>
+                              <div style={{ fontWeight: 700, color: "var(--text-primary)", marginTop: 2 }}>{item.value || item}</div>
+                            </div>
+                          );
+                        })}
+
+                        {/* 2. Các trường bị ẩn an toàn */}
+                        {Object.keys(verifyStatus.details.blindedHashes || verifyStatus.details.blinded || {}).map((k) => {
+                          const labels = {
+                            studentName: "Họ và tên",
+                            studentId: "Mã sinh viên",
+                            major: "Chuyên ngành",
+                            gpa: "Điểm GPA",
+                            classification: "Xếp loại",
+                            graduationYear: "Năm TN",
+                            dateOfBirth: "Ngày sinh",
+                            nationalId: "Số CCCD",
+                          };
+                          return (
+                            <div
+                              key={k}
+                              style={{
+                                padding: "8px 10px",
+                                background: "rgba(255, 255, 255, 0.02)",
+                                border: "1px solid var(--border)",
+                                borderRadius: 8,
+                                fontSize: 12,
+                              }}
+                            >
+                              <div style={{ fontSize: 10, color: "var(--text-muted)" }}>{labels[k] || k}</div>
+                              <div style={{ color: "var(--text-muted)", fontSize: 11, fontStyle: "italic", marginTop: 2 }}>
+                                🔒 Đã ẩn an toàn (Quyền riêng tư)
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* SSO Simulation Banner */}
-                {verifyStatus.valid && verifyStatus.details?.verifiableCredential?.[0] && (
-                  <SSOBanner vc={verifyStatus.details.verifiableCredential[0]} />
-                )}
-
-                {/* Thông tin chi tiết từ VP JSON */}
-                {verifyStatus.valid && verifyStatus.details?.verifiableCredential?.[0] && (
-                  <div className="verify-details-box">
-                    <h4 style={{ fontSize: 13, textTransform: "uppercase", color: "var(--text-secondary)", marginBottom: 12 }}>
-                      Thông tin Bằng cấp
-                    </h4>
-                    {(() => {
-                      const vc   = verifyStatus.details.verifiableCredential[0];
-                      const subj = vc.credentialSubject;
-                      return (
-                        <>
-                          {[
-                            ["Loại bằng",  vc.type?.[1] || vc.type?.[0]],
-                            ["Họ tên",     subj?.studentName],
-                            ["MSSV",       subj?.studentId],
-                            ["Ngành học",  subj?.major],
-                            ["Năm TN",     subj?.graduationYear],
-                            ["DID",        subj?.id],
-                          ].filter(([, v]) => v).map(([label, value]) => (
-                            <div key={label} className="info-row" style={{ padding: "6px 0", border: "none" }}>
-                              <span className="info-label">{label}:</span>
-                              <span className={`info-value ${label === "DID" ? "info-mono" : ""}`} style={{ fontSize: label === "DID" ? 11 : 14 }}>
-                                {value}
-                              </span>
+                    ) : (
+                      /* Dạng Full Legacy VC */
+                      verifyStatus.details.verifiableCredential?.[0] && (
+                        <div style={{ padding: 12, background: "rgba(255, 255, 255, 0.02)", borderRadius: 8, border: "1px solid var(--border)", fontSize: 12 }}>
+                          {Object.entries(verifyStatus.details.verifiableCredential[0].credentialSubject || {}).map(([k, v]) => (
+                            <div key={k} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0" }}>
+                              <span style={{ color: "var(--text-muted)" }}>{k}:</span>
+                              <span style={{ fontWeight: 600 }}>{String(v)}</span>
                             </div>
                           ))}
-                        </>
-                      );
-                    })()}
+                        </div>
+                      )
+                    )}
                   </div>
                 )}
 
-                {verifyStatus.valid && !verifyStatus.details?.verifiableCredential && (
-                  <div style={{ marginTop: 16, textAlign: "center", padding: 16, background: "rgba(104,211,145,0.06)", borderRadius: 10, border: "1px solid rgba(104,211,145,0.2)" }}>
-                    <p style={{ fontSize: 13, color: "var(--green)" }}>✅ Xác thực thành công qua Compact VP (QR Code)</p>
+                {/* Các bước kiểm tra */}
+                <div style={{ marginTop: 16 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", marginBottom: 8 }}>
+                    Chi tiết các bước kiểm chứng:
                   </div>
+                  {verifyStatus.steps?.map((st, i) => (
+                    <div key={i} className={`verify-step ${st.ok ? "step-ok" : "step-fail"}`} style={{ fontSize: 12 }}>
+                      <span className="step-icon">{st.ok ? "✓" : "✗"}</span>
+                      <span>{st.label}</span>
+                    </div>
+                  ))}
+                </div>
+
+                {/* On-chain Audit Log notice */}
+                {verifyStatus.withWallet && (
+                  <div style={{ marginTop: 12, fontSize: 11, color: "var(--green)", textAlign: "center" }}>
+                    📜 Bằng chứng xác minh đã được ghi bất biến vào Smart Contract Audit Log
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Nút Xem Audit Log on-chain */}
+          <div style={{ marginTop: 16, borderTop: "1px solid var(--border)", paddingTop: 14 }}>
+            <button
+              className="btn btn-outline btn-sm btn-full"
+              onClick={loadAuditLog}
+              disabled={auditLoading}
+              style={{ fontSize: 12 }}
+            >
+              {auditLoading ? <><span className="spinner" /> Đang tải Audit Log...</> : "📜 Xem Nhật ký Xác thực On-Chain (Audit Log)"}
+            </button>
+
+            {showAudit && (
+              <div style={{ marginTop: 12, maxHeight: 200, overflowY: "auto" }}>
+                {auditLog.length === 0 ? (
+                  <div style={{ fontSize: 12, color: "var(--text-muted)", textAlign: "center", padding: 10 }}>
+                    Chưa có bản ghi xác thực nào on-chain.
+                  </div>
+                ) : (
+                  auditLog.map((r, i) => (
+                    <div key={i} className="info-row" style={{ padding: "6px 0", fontSize: 11, flexWrap: "wrap" }}>
+                      <span style={{ color: r.result ? "var(--green)" : "var(--red)", fontWeight: 700 }}>
+                        {r.result ? "✓ HỢP LỆ" : "✗ THẤT BẠI"}
+                      </span>
+                      <span className="info-mono" style={{ color: "var(--text-muted)" }}>
+                        Verifier: {shortAddr(r.verifier)}
+                      </span>
+                      <span className="info-mono" style={{ color: "var(--cyan)" }}>
+                        Holder: {shortAddr(r.holder)}
+                      </span>
+                      <span style={{ color: "var(--text-muted)", marginLeft: "auto" }}>
+                        {formatTimestamp(r.timestamp)}
+                      </span>
+                    </div>
+                  ))
                 )}
               </div>
             )}
           </div>
         </div>
       </div>
-
-      {/* ══════════════ AUDIT LOG ════════════════════════════ */}
-      <div className="section card" style={{ marginTop: 20 }}>
-        <div className="card-title" style={{ userSelect: "none" }}>
-          📋 Nhật ký Kiểm định On-chain (Audit Log)
-          <button
-            className="btn btn-outline btn-sm"
-            style={{ marginLeft: "auto" }}
-            onClick={showAudit ? () => setShowAudit(false) : loadAuditLog}
-            disabled={auditLoading}
-          >
-            {auditLoading ? <><span className="spinner" /> Đang tải...</> : showAudit ? "▲ Thu gọn" : "▼ Xem Audit Log"}
-          </button>
-        </div>
-
-        {showAudit && (
-          auditLog.length === 0 ? (
-            <div className="empty-state" style={{ padding: "24px 0" }}>
-              <div className="empty-state-icon">📭</div>
-              Chưa có lần xác thực nào được ghi lại.
-            </div>
-          ) : (
-            <div style={{ overflowX: "auto", marginTop: 8 }}>
-              <table className="audit-table">
-                <thead>
-                  <tr>
-                    <th>Thời gian</th>
-                    <th>Verifier</th>
-                    <th>Holder</th>
-                    <th>Kết quả</th>
-                    <th>Lý do</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {auditLog.map((r, i) => (
-                    <tr key={i}>
-                      <td style={{ whiteSpace: "nowrap" }}>{formatTimestamp(r.timestamp)}</td>
-                      <td><code className="info-mono" style={{ fontSize: 11 }}>{shortAddr(r.verifier)}</code></td>
-                      <td><code className="info-mono" style={{ fontSize: 11 }}>{shortAddr(r.holder)}</code></td>
-                      <td>
-                        <span className={`status-badge ${r.result ? "status-active" : "status-inactive"}`}>
-                          {r.result ? "✅ Hợp lệ" : "❌ Từ chối"}
-                        </span>
-                      </td>
-                      <td style={{ fontSize: 12, color: "var(--text-secondary)" }}>{r.reason}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )
-        )}
-      </div>
-    </div>
-  );
-}
-
-/* ══════════════════════════════════════════════════════════
-   SSO Simulation Banner
-══════════════════════════════════════════════════════════ */
-function SSOBanner({ vc }) {
-  const subj = vc?.credentialSubject;
-  if (!subj?.studentName) return null;
-  return (
-    <div className="sso-banner">
-      <div className="sso-banner-icon">🎓</div>
-      <div className="sso-banner-body">
-        <div className="sso-banner-title">Đăng nhập thành công!</div>
-        <div className="sso-banner-name">{subj.studentName}</div>
-        <div className="sso-banner-meta">
-          {subj.studentId && <span>MSSV: {subj.studentId}</span>}
-          {subj.major && <span> · {subj.major}</span>}
-          {subj.graduationYear && <span> · Khóa {subj.graduationYear}</span>}
-        </div>
-        <div className="sso-banner-footer">
-          Danh tính xác thực qua Blockchain DID System · {new Date().toLocaleString("vi-VN")}
-        </div>
-      </div>
-      <div className="sso-banner-badge">✓</div>
     </div>
   );
 }
