@@ -1,3 +1,4 @@
+﻿import { createSelectivePresentation } from "../utils/selectiveDisclosure";
 import { useState, useEffect, useRef } from "react";
 import { ethers } from "ethers";
 import QRCode from "qrcode";
@@ -29,7 +30,12 @@ export default function HolderPage({ account: propAccount }) {
   /* ── VC state ──────────────────────────────────────── */
   const [vcs, setVcs]           = useState([]);
   const [vcLoading, setVcLoading] = useState(false);
-  const [selectedVc, setSelectedVc] = useState(null);
+    const [selectedVc, setSelectedVc] = useState(null);
+  const [disclosedKeys, setDisclosedKeys] = useState([
+    "studentName", "major", "classification", "graduationYear"
+  ]);
+  const [ttlMinutes, setTtlMinutes] = useState("15");
+  const [audienceTarget, setAudienceTarget] = useState("");
 
   /* ── VP state ──────────────────────────────────────── */
   const [vpJson, setVpJson]       = useState("");
@@ -138,55 +144,158 @@ export default function HolderPage({ account: propAccount }) {
     setSelectedVc(vc);
     setVpJson("");
     setQrDataUrl("");
+    if (vc.vcData?.credentialSubject?.saltedClaims) {
+      const allK = Object.keys(vc.vcData.credentialSubject.saltedClaims);
+      // Mặc định chọn các trường thông dụng
+      setDisclosedKeys(["studentName", "major", "classification", "graduationYear"].filter(k => allK.includes(k)));
+    }
+  }
+
+  function handleToggleKey(k) {
+    setDisclosedKeys(prev => 
+      prev.includes(k) ? prev.filter(x => x !== k) : [...prev, k]
+    );
+  }
+
+  function handleApplyPreset(presetType) {
+    if (!selectedVc?.vcData?.credentialSubject?.saltedClaims) return;
+    const allK = Object.keys(selectedVc.vcData.credentialSubject.saltedClaims);
+    if (presetType === "all") {
+      setDisclosedKeys(allK);
+    } else if (presetType === "job") {
+      setDisclosedKeys(["studentName", "major", "classification", "graduationYear"].filter(k => allK.includes(k)));
+    } else if (presetType === "minimal") {
+      setDisclosedKeys(["studentName", "major", "classification"].filter(k => allK.includes(k)));
+    }
+  }
+
+  async function handleGenerateVP() {
+    if (!selectedVc) return;
     setVpLoading(true);
+    setVpJson("");
+    setQrDataUrl("");
+
     try {
-      if (!vc.vcData) throw new Error("Thiếu dữ liệu chi tiết VC (off-chain data missing).");
-      if (vc.isRevoked)  throw new Error("VC đã bị thu hồi, không thể tạo VP.");
-      if (vc.health === "expired") throw new Error("VC đã hết hạn, không thể tạo VP.");
+      if (selectedVc.isRevoked) throw new Error("VC đã bị thu hồi trên Blockchain, không thể tạo VP.");
+      if (selectedVc.health === "expired") throw new Error("VC đã hết hạn, không thể tạo VP.");
 
       const signer = getSigner();
-      const payload = {
-        vcHash:    vc.hash,
-        holder:    account,
-        timestamp: Date.now(),
-      };
-      const messageToSign = JSON.stringify(payload);
-      const signature     = await signer.signMessage(messageToSign);
+      if (!signer) throw new Error("Chưa kết nối ví MetaMask. Vui lòng kết nối ví trước!");
 
-      const vp = {
-        "@context": ["https://www.w3.org/2018/credentials/v1"],
-        type: ["VerifiablePresentation"],
-        verifiableCredential: [vc.vcData],
-        proof: {
-          type:               "EthereumPersonalSignature2021",
-          created:            new Date().toISOString(),
-          verificationMethod: `did:ethr:${account}#controller`,
-          proofPurpose:       "authentication",
-          proofValue:         signature,
-          payload:            messageToSign,
-        },
-      };
+      let vp = null;
+      let qrPayload = null;
+      const now = Date.now();
+      const ttl = Number(ttlMinutes) || 15;
+      const expirationTimestamp = now + ttl * 60 * 1000;
+      const audience = audienceTarget.trim() || "PUBLIC_VERIFIER";
+
+      // 1. Nếu VC là chuẩn Salted Claims (Selective Disclosure)
+      if (selectedVc.vcData?.credentialSubject?.saltedClaims) {
+        const {
+          presentationPayload,
+          presentedClaims,
+          blindedHashes,
+          allKeys,
+          nonce,
+        } = createSelectivePresentation(selectedVc.vcData, disclosedKeys, {
+          expiresInMinutes: ttl,
+          audience: audience,
+        });
+
+        const messageToSign = JSON.stringify(presentationPayload);
+        const signature = await signer.signMessage(messageToSign);
+
+        vp = {
+          "@context": [
+            "https://www.w3.org/2018/credentials/v1",
+            "https://w3id.org/security/suites/ed25519-2020/v1"
+          ],
+          type: ["VerifiablePresentation", "SelectiveDisclosurePresentation"],
+          presentationPayload,
+          presentedClaims,
+          blindedHashes,
+          allKeys,
+          proof: {
+            type: "EthereumPersonalSignature2021",
+            created: new Date().toISOString(),
+            verificationMethod: `did:ethr:${account}#controller`,
+            proofPurpose: "authentication",
+            proofValue: signature,
+            payload: messageToSign,
+          },
+        };
+
+        qrPayload = {
+          selective: true,
+          holder: account,
+          vcHash: selectedVc.hash,
+          sig: signature,
+          ts: presentationPayload.timestamp,
+          exp: expirationTimestamp,
+          nonce,
+          aud: audience,
+          disclosed: presentedClaims,
+          blinded: blindedHashes,
+          keys: allKeys,
+        };
+
+      } else {
+        // 2. Chuẩn Legacy thông thường (kể cả khi không có saltedClaims)
+        const nonce = ethers.hexlify(ethers.randomBytes(16));
+        const payload = {
+          vcHash: selectedVc.hash,
+          holder: account,
+          timestamp: now,
+          expiresAt: expirationTimestamp,
+          nonce,
+          audience,
+        };
+        const messageToSign = JSON.stringify(payload);
+        const signature = await signer.signMessage(messageToSign);
+
+        vp = {
+          "@context": ["https://www.w3.org/2018/credentials/v1"],
+          type: ["VerifiablePresentation"],
+          verifiableCredential: selectedVc.vcData ? [selectedVc.vcData] : [],
+          payload,
+          proof: {
+            type: "EthereumPersonalSignature2021",
+            created: new Date().toISOString(),
+            verificationMethod: `did:ethr:${account}#controller`,
+            proofPurpose: "authentication",
+            proofValue: signature,
+            payload: messageToSign,
+          },
+        };
+
+        qrPayload = {
+          holder: account,
+          vcHash: selectedVc.hash,
+          sig: signature,
+          ts: payload.timestamp,
+          exp: payload.expiresAt,
+          nonce,
+          aud: audience,
+        };
+      }
+
       const vpString = JSON.stringify(vp, null, 2);
       setVpJson(vpString);
 
-      /* QR code — compact VP (tạo data URL ảnh để render trực tiếp vào thẻ img) */
-      const compactVp = {
-        holder: account,
-        vcHash: vc.hash,
-        sig:    signature,
-        ts:     payload.timestamp,
-      };
-      const qrUrl = await QRCode.toDataURL(JSON.stringify(compactVp), {
-        width: 260,
+      // Render QR Code
+      const qrUrl = await QRCode.toDataURL(JSON.stringify(qrPayload), {
+        width: 280,
         margin: 2,
-        color: { dark: "#1A202C", light: "#FFFFFF" },
+        color: { dark: "#0f172a", light: "#ffffff" },
       });
       setQrDataUrl(qrUrl);
 
-      /* Lưu lịch sử */
-      saveToHistory(vc.hash, vc.type);
+      // Lưu lịch sử chia sẻ
+      saveToHistory(selectedVc.hash, selectedVc.type);
+
     } catch (e) {
-      alert("Lỗi tạo VP: " + (e.reason || e.message));
+      console.error("handleGenerateVP error:", e);
+      alert("Lỗi khi tạo VP: " + (e.reason || e.message));
     }
     setVpLoading(false);
   }
@@ -350,89 +459,303 @@ export default function HolderPage({ account: propAccount }) {
           )}
         </div>
 
-        {/* Tạo VP + QR */}
+        {/* Tạo VP + QR với Tiết lộ có chọn lọc */}
         <div className="card">
-          <div className="card-title">🔐 Tạo VP & Chia sẻ</div>
+          <div className="card-title" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <span>🔐 Tạo VP & Chia sẻ Quyền riêng tư</span>
+            {selectedVc && (
+              <span style={{ fontSize: 12, padding: "3px 8px", borderRadius: 6, background: "rgba(0, 229, 255, 0.1)", color: "var(--cyan)", border: "1px solid rgba(0, 229, 255, 0.2)" }}>
+                {selectedVc.type}
+              </span>
+            )}
+          </div>
 
           {!selectedVc ? (
-            <div className="empty-state" style={{ marginTop: 40 }}>
-              <div className="empty-state-icon">👆</div>
-              Chọn một chứng chỉ bên trái để tạo Verifiable Presentation.
+            <div className="empty-state" style={{ padding: "50px 20px" }}>
+              <div className="empty-state-icon" style={{ fontSize: 36, marginBottom: 10 }}>👈</div>
+              <div style={{ fontWeight: 600, fontSize: 14, color: "var(--text-primary)", marginBottom: 4 }}>
+                Chưa chọn bằng cấp nào
+              </div>
+              <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                Vui lòng bấm vào một bằng cấp trong danh sách bên trái để cấu hình quyền riêng tư và tạo mã QR.
+              </div>
             </div>
           ) : (
-            <div>
-              <div className="alert alert-info" style={{ marginBottom: 14, fontSize: 13 }}>
-                Đang tạo VP cho: <strong>{selectedVc.type}</strong>
-                <br />MetaMask sẽ yêu cầu ký xác nhận quyền sở hữu.
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              
+              {/* Header thông tin bằng đã chọn */}
+              <div style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                padding: "10px 14px",
+                background: "rgba(255, 255, 255, 0.03)",
+                border: "1px solid var(--border)",
+                borderRadius: 8,
+              }}>
+                <div>
+                  <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Bằng cấp đang chọn:</div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)" }}>{selectedVc.type}</div>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Mã băm on-chain (vcHash):</div>
+                  <div className="info-mono" style={{ fontSize: 11, color: "var(--cyan)" }}>{shortAddr(selectedVc.hash)}</div>
+                </div>
               </div>
 
-              {vpLoading && (
-                <div style={{ textAlign: "center", padding: 20 }}>
-                  <span className="spinner" /> Đang tạo chữ ký số...
+              {/* 1. BẢNG TIẾT LỘ CÓ CHỌN LỌC (SELECTIVE DISCLOSURE) */}
+              {selectedVc.vcData?.credentialSubject?.saltedClaims ? (
+                <div style={{
+                  background: "rgba(16, 185, 129, 0.04)",
+                  border: "1px solid rgba(16, 185, 129, 0.25)",
+                  borderRadius: 10,
+                  padding: "14px 16px",
+                }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "var(--green)", display: "flex", alignItems: "center", gap: 6 }}>
+                      <span>🛡️</span> TIẾT LỘ CÓ CHỌN LỌC (SELECTIVE DISCLOSURE)
+                    </div>
+                    <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                      Đã chọn mở: <strong style={{ color: "var(--green)" }}>{disclosedKeys.length}</strong> / {Object.keys(selectedVc.vcData.credentialSubject.saltedClaims).length} trường
+                    </span>
+                  </div>
+
+                  <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 12, lineHeight: 1.4 }}>
+                    Tích chọn các trường muốn <strong>công khai</strong> cho nhà tuyển dụng. Các trường không tích sẽ được <strong>ẩn hoàn toàn (Blind Hash)</strong>:
+                  </div>
+
+                  {/* Nút Preset cấu hình nhanh */}
+                  <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-outline"
+                      style={{ fontSize: 11, padding: "4px 10px", borderRadius: 6 }}
+                      onClick={() => handleApplyPreset("all")}
+                    >
+                      🎯 Mở tất cả
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-outline"
+                      style={{ fontSize: 11, padding: "4px 10px", borderRadius: 6, borderColor: "rgba(16, 185, 129, 0.4)", color: "var(--green)" }}
+                      onClick={() => handleApplyPreset("job")}
+                    >
+                      💼 Ứng tuyển việc làm (Ẩn GPA & CCCD)
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-outline"
+                      style={{ fontSize: 11, padding: "4px 10px", borderRadius: 6 }}
+                      onClick={() => handleApplyPreset("minimal")}
+                    >
+                      🛡️ Tối giản (Chỉ Tên & Ngành)
+                    </button>
+                  </div>
+
+                  {/* Danh sách Checkbox các thuộc tính */}
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                    {Object.keys(selectedVc.vcData.credentialSubject.saltedClaims).map((k) => {
+                      const val = selectedVc.vcData.credentialSubject.saltedClaims[k].value;
+                      const labels = {
+                        studentName: "Họ và tên",
+                        studentId: "Mã sinh viên",
+                        major: "Chuyên ngành",
+                        gpa: "Điểm GPA",
+                        classification: "Xếp loại",
+                        graduationYear: "Năm TN",
+                        dateOfBirth: "Ngày sinh",
+                        nationalId: "Số CCCD",
+                      };
+                      const isChecked = disclosedKeys.includes(k);
+                      return (
+                        <div
+                          key={k}
+                          onClick={() => handleToggleKey(k)}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                            padding: "8px 10px",
+                            background: isChecked ? "rgba(16, 185, 129, 0.12)" : "rgba(255, 255, 255, 0.02)",
+                            border: isChecked ? "1px solid var(--green)" : "1px solid rgba(255, 255, 255, 0.08)",
+                            borderRadius: 6,
+                            cursor: "pointer",
+                            transition: "all 0.15s ease",
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => {}}
+                            style={{ cursor: "pointer" }}
+                          />
+                          <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12 }}>
+                            <span style={{ color: "var(--text-muted)", fontSize: 11 }}>{labels[k] || k}: </span>
+                            <span style={{ fontWeight: 600, color: isChecked ? "var(--text-primary)" : "var(--text-muted)" }}>
+                              {isChecked ? val : "🔒 [Ẩn an toàn]"}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <div className="alert alert-info" style={{ fontSize: 12, margin: 0 }}>
+                  ℹ️ Bằng cấp này được lưu theo chuẩn cơ bản. Hệ thống sẽ ký số chứng minh quyền sở hữu toàn phần.
                 </div>
               )}
 
+              {/* 2. BẢO MẬT CHỐNG PHÁT LẠI (TIME-BOUND & AUDIENCE) */}
+              <div style={{
+                background: "rgba(59, 130, 246, 0.04)",
+                border: "1px solid rgba(59, 130, 246, 0.25)",
+                borderRadius: 10,
+                padding: "14px 16px",
+              }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "#60a5fa", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
+                  <span>⏱️</span> BẢO MẬT CHỐNG PHÁT LẠI (ANTI-REPLAY)
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  <div>
+                    <label className="form-label" style={{ fontSize: 11, marginBottom: 4 }}>Thời hạn sống mã QR:</label>
+                    <select
+                      className="form-select"
+                      style={{ padding: "7px 10px", fontSize: 12, borderRadius: 6 }}
+                      value={ttlMinutes}
+                      onChange={(e) => setTtlMinutes(e.target.value)}
+                    >
+                      <option value="5">⚡ 5 Phút (Siêu an toàn / Quét tại chỗ)</option>
+                      <option value="15">⏱️ 15 Phút (Khuyên dùng)</option>
+                      <option value="60">⏳ 1 Giờ</option>
+                      <option value="1440">📅 24 Giờ</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="form-label" style={{ fontSize: 11, marginBottom: 4 }}>Khóa đơn vị nhận (Audience):</label>
+                    <input
+                      className="form-input"
+                      style={{ padding: "7px 10px", fontSize: 12, borderRadius: 6 }}
+                      placeholder="VD: FPT Software, Viettel..."
+                      value={audienceTarget}
+                      onChange={(e) => setAudienceTarget(e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* 3. NÚT KÝ SỐ METAMASK */}
+              <button
+                id="btn-generate-vp"
+                className="btn btn-primary"
+                onClick={handleGenerateVP}
+                disabled={vpLoading}
+                style={{
+                  padding: "12px 20px",
+                  fontSize: 14,
+                  fontWeight: 700,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 8,
+                  boxShadow: "0 4px 16px rgba(0, 229, 255, 0.25)",
+                }}
+              >
+                {vpLoading ? (
+                  <>
+                    <span className="spinner" /> Đang yêu cầu ký số ví MetaMask...
+                  </>
+                ) : (
+                  <>
+                    <span>🚀</span> Ký số & Xuất trình Mã QR (VP)
+                  </>
+                )}
+              </button>
+
+              {/* 4. KẾT QUẢ MÃ QR & VP JSON */}
               {vpJson && !vpLoading && (
-                <>
-                  <div className="qr-container">
-                    <span style={{ fontSize: 14, fontWeight: 600 }}>🔳 Mã QR Xác thực</span>
-                    {qrDataUrl ? (
-                      <img
-                        src={qrDataUrl}
-                        alt="Mã QR Xác thực"
-                        style={{
-                          width: 220,
-                          height: 220,
-                          borderRadius: 12,
-                          display: "block",
-                          margin: "12px auto",
-                          boxShadow: "0 4px 20px rgba(0,0,0,0.3)",
-                        }}
-                      />
-                    ) : (
-                      <div style={{ height: 220, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                        <span className="spinner" />
-                      </div>
-                    )}
-                    <p style={{ fontSize: 12, color: "var(--text-muted)", textAlign: "center" }}>
-                      Đưa mã QR này cho nhà tuyển dụng (Verifier) để xác thực danh tính.
-                    </p>
+                <div style={{
+                  background: "rgba(0, 229, 255, 0.03)",
+                  border: "1px solid rgba(0, 229, 255, 0.25)",
+                  borderRadius: 12,
+                  padding: 16,
+                  textAlign: "center",
+                  marginTop: 6,
+                }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: "var(--green)", marginBottom: 4 }}>
+                    ✅ MÃ QR XÁC THỰC ĐÃ SẴN SÀNG
                   </div>
-                  <div style={{ marginTop: 16 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: "var(--cyan)" }}>
-                      Verifiable Presentation (JSON-LD):
-                    </div>
-                    <div className="vp-display">{vpJson}</div>
-                    <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-                      <button
-                        className="btn btn-outline"
-                        style={{ flex: 1 }}
-                        onClick={() => { navigator.clipboard.writeText(vpJson); alert("Đã copy VP JSON!"); }}
-                      >
-                        📋 Copy JSON
-                      </button>
-                      <button
-                        className="btn btn-outline"
-                        style={{ flex: 1 }}
-                        onClick={() => {
-                          const blob = new Blob([vpJson], { type: "application/json" });
-                          const a = document.createElement("a");
-                          a.href = URL.createObjectURL(blob);
-                          a.download = `vp-${selectedVc.type}-${Date.now()}.json`;
-                          a.click();
-                        }}
-                      >
-                        ⬇ Tải VP
-                      </button>
-                    </div>
+                  <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 12 }}>
+                    Thời hạn: {ttlMinutes} phút | Đơn vị: {audienceTarget.trim() || "Công khai"}
                   </div>
-                </>
+
+                  {qrDataUrl ? (
+                    <img
+                      src={qrDataUrl}
+                      alt="Mã QR Xác thực"
+                      style={{
+                        width: 220,
+                        height: 220,
+                        borderRadius: 12,
+                        display: "block",
+                        margin: "0 auto 14px auto",
+                        border: "3px solid #ffffff",
+                        boxShadow: "0 8px 30px rgba(0, 0, 0, 0.4)",
+                      }}
+                    />
+                  ) : (
+                    <div style={{ height: 220, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <span className="spinner" />
+                    </div>
+                  )}
+
+                  <p style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 12 }}>
+                    Đưa mã QR này cho nhà tuyển dụng (Verifier) để quét xác thực mà không làm lộ thông tin cá nhân.
+                  </p>
+
+                  <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
+                    <button
+                      type="button"
+                      className="btn btn-outline"
+                      style={{ flex: 1, fontSize: 12, padding: "8px" }}
+                      onClick={() => {
+                        navigator.clipboard.writeText(vpJson);
+                        alert("Đã sao chép chuỗi JSON Verifiable Presentation!");
+                      }}
+                    >
+                      📋 Copy VP JSON
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-outline"
+                      style={{ flex: 1, fontSize: 12, padding: "8px" }}
+                      onClick={() => {
+                        const blob = new Blob([vpJson], { type: "application/json" });
+                        const a = document.createElement("a");
+                        a.href = URL.createObjectURL(blob);
+                        a.download = `vp-${selectedVc.type}-${Date.now()}.json`;
+                        a.click();
+                      }}
+                    >
+                      💾 Tải File VP
+                    </button>
+                  </div>
+
+                  <details style={{ textAlign: "left", marginTop: 10 }}>
+                    <summary style={{ cursor: "pointer", fontSize: 12, color: "var(--cyan)", fontWeight: 600 }}>
+                      🔍 Xem chi tiết chuỗi Verifiable Presentation (JSON-LD)
+                    </summary>
+                    <div className="vp-display" style={{ marginTop: 8, maxHeight: 180, overflowY: "auto", fontSize: 11 }}>
+                      {vpJson}
+                    </div>
+                  </details>
+                </div>
               )}
+
             </div>
           )}
         </div>
-      </div>
-
+        </div>
       {/* ══════════════ SECTION 3: Lịch sử chia sẻ ══════════ */}
       {shareHistory.length > 0 && (
         <div className="section card" style={{ marginTop: 20 }}>

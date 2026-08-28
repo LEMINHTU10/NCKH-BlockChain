@@ -1,3 +1,4 @@
+import { verifySelectiveDisclosure } from "../utils/selectiveDisclosure";
 ﻿import { useState, useEffect } from "react";
 import { ethers } from "ethers";
 import { getSigner, getAccount, shortAddr, formatTimestamp } from "../utils/web3";
@@ -28,86 +29,147 @@ export default function VerifierPage({ account: propAccount }) {
      Xác thực VP
   ───────────────────────────────────────────────────── */
   async function handleVerify() {
-    if (!vpInput.trim()) { alert("Vui lòng nhập JSON của VP!"); return; }
+    if (!vpInput.trim()) { alert("Vui lòng nhập JSON hoặc mã QR của VP!"); return; }
     setLoading(true); setVerifyStatus(null);
 
     try {
-      /* Bước 1: Parse JSON */
       let parsed;
       try { parsed = JSON.parse(vpInput); }
       catch { throw new Error("Định dạng JSON không hợp lệ."); }
 
       let vcHash = "", holderAddr = "", signature = "", payloadToVerify = "";
+      let isSelective = false;
+      let expiresAt = null;
+      let audience = "PUBLIC_VERIFIER";
+      let nonce = "";
 
-      if (parsed.proof?.payload) {
-        /* Full VP JSON-LD */
-        signature       = parsed.proof.proofValue;
+      // 1. Nhận diện dạng Selective Disclosure VP
+      if (parsed.type?.includes("SelectiveDisclosurePresentation") || parsed.presentationPayload) {
+        isSelective = true;
+        signature = parsed.proof?.proofValue;
+        payloadToVerify = parsed.proof?.payload;
+        const pObj = parsed.presentationPayload || JSON.parse(payloadToVerify);
+        vcHash = pObj.vcHash;
+        holderAddr = pObj.holder;
+        expiresAt = pObj.expiresAt;
+        audience = pObj.audience || "PUBLIC_VERIFIER";
+        nonce = pObj.nonce;
+
+      } else if (parsed.selective && parsed.sig) {
+        // Compact Selective VP từ QR Code
+        isSelective = true;
+        signature = parsed.sig;
+        vcHash = parsed.vcHash;
+        holderAddr = parsed.holder;
+        expiresAt = parsed.exp;
+        audience = parsed.aud || "PUBLIC_VERIFIER";
+        nonce = parsed.nonce;
+        const pObj = {
+          vcHash: parsed.vcHash,
+          holder: parsed.holder,
+          timestamp: parsed.ts,
+          expiresAt: parsed.exp,
+          nonce: parsed.nonce,
+          audience: parsed.aud,
+          disclosedKeys: Object.keys(parsed.disclosed || {}).sort(),
+        };
+        payloadToVerify = JSON.stringify(pObj);
+
+      } else if (parsed.proof?.payload) {
+        // Full VP Legacy
+        signature = parsed.proof.proofValue;
         payloadToVerify = parsed.proof.payload;
-        const obj       = JSON.parse(payloadToVerify);
-        vcHash          = obj.vcHash;
-        holderAddr      = obj.holder;
+        const obj = JSON.parse(payloadToVerify);
+        vcHash = obj.vcHash;
+        holderAddr = obj.holder;
+        expiresAt = obj.expiresAt || null;
+
       } else if (parsed.sig && parsed.vcHash) {
-        /* Compact VP từ QR code */
-        signature       = parsed.sig;
-        vcHash          = parsed.vcHash;
-        holderAddr      = parsed.holder;
+        // Compact VP Legacy từ QR code
+        signature = parsed.sig;
+        vcHash = parsed.vcHash;
+        holderAddr = parsed.holder;
+        expiresAt = parsed.exp || null;
         payloadToVerify = JSON.stringify({ vcHash: parsed.vcHash, holder: parsed.holder, timestamp: parsed.ts });
+
       } else {
         throw new Error("Cấu trúc VP không chứa thông tin chữ ký hợp lệ.");
       }
 
       if (!vcHash || !holderAddr) throw new Error("Thiếu vcHash hoặc địa chỉ holder.");
 
-      /* Bước 2: Xác thực chữ ký số (off-chain) */
-      const recoveredAddr = ethers.verifyMessage(payloadToVerify, signature);
-      if (recoveredAddr.toLowerCase() !== holderAddr.toLowerCase()) {
-        throw new Error("❌ Chữ ký số không hợp lệ — VP này đã bị giả mạo hoặc chỉnh sửa.");
-      }
-      /* Buoc 2.1: Kiem tra tinh toan ven noi dung VC (Anti-Tamper Check) */
-      if (parsed.verifiableCredential && parsed.verifiableCredential[0]) {
-        const vcObj = parsed.verifiableCredential[0];
-        const computedHash = ethers.keccak256(ethers.toUtf8Bytes(JSON.stringify(vcObj)));
-        if (computedHash.toLowerCase() !== vcHash.toLowerCase()) {
-          throw new Error('❌ Phát hiện giả mạo: Nội dung Bằng cấp (VC) đã bị chỉnh sửa! Mã Hash không khớp với Blockchain.');
+      // 2. Kiểm tra Thời hạn sống (Time-Bound Expiration Check)
+      if (expiresAt) {
+        if (Date.now() > Number(expiresAt)) {
+          const expiredDate = new Date(Number(expiresAt)).toLocaleString("vi-VN");
+          throw new Error(`❌ Mã xuất trình (VP) đã HẾT HẠN vào lúc ${expiredDate}!
+(Chống tấn công phát lại: Vui lòng yêu cầu sinh viên tạo mã mới).`);
         }
       }
 
-      /* Bước 3: Xác thực on-chain
-         ─ Nếu có ví MetaMask → gọi verifyIdentity() (ghi audit log)
-         ─ Nếu khách          → gọi view functions trực tiếp (không cần gas)  */
+      // 3. Xác thực chữ ký số (off-chain)
+      let recoveredAddr = "";
+      try {
+        recoveredAddr = ethers.verifyMessage(payloadToVerify, signature);
+      } catch (sigErr) {
+        throw new Error("❌ Chữ ký số không hợp lệ hoặc đã bị chỉnh sửa (Signature corrupted).");
+      }
+
+      if (recoveredAddr.toLowerCase() !== holderAddr.toLowerCase()) {
+        throw new Error("❌ Chữ ký số không khớp với Holder — VP này đã bị giả mạo hoặc chỉnh sửa.");
+      }
+
+      // 4. Kiểm tra tính toàn vẹn (Tamper Detection)
+      if (isSelective) {
+        // Xác minh cam kết toán học Salted Claims
+        const selectiveData = {
+          presentedClaims: parsed.presentedClaims || parsed.disclosed || {},
+          blindedHashes: parsed.blindedHashes || parsed.blinded || {},
+          allKeys: parsed.allKeys || parsed.keys || [],
+          vcHash,
+        };
+        const selectiveCheck = verifySelectiveDisclosure(selectiveData);
+        if (!selectiveCheck.isValid) {
+          throw new Error("❌ Phát hiện giả mạo: Mã cam kết băm của thuộc tính không khớp với Root Hash trên Blockchain!");
+        }
+      } else if (parsed.verifiableCredential && parsed.verifiableCredential[0]) {
+        const vcObj = parsed.verifiableCredential[0];
+        const computedHash = ethers.keccak256(ethers.toUtf8Bytes(JSON.stringify(vcObj)));
+        if (computedHash.toLowerCase() !== vcHash.toLowerCase()) {
+          throw new Error("❌ Phát hiện giả mạo: Nội dung Bằng cấp (VC) đã bị chỉnh sửa! Mã Hash không khớp với Blockchain.");
+        }
+      }
+
+      // 5. Xác thực On-Chain trên Blockchain
       let isValid = false, reason = "", steps;
 
       if (account) {
-        /* === Chế độ có ví: dùng IdentityVerifier.verifyIdentity() === */
-        const signer   = getSigner();
+        const signer = getSigner();
         const ivContract = new ethers.Contract(
           CONTRACT_ADDRESSES.IDENTITY_VERIFIER, IDENTITY_VERIFIER_ABI, signer
         );
-        const tx      = await ivContract.verifyIdentity(holderAddr, vcHash);
+        const tx = await ivContract.verifyIdentity(holderAddr, vcHash);
         const receipt = await tx.wait();
 
         const event = receipt.logs.find(log => log.fragment?.name === "IdentityVerified");
         if (event) {
           isValid = event.args[3];
-          reason  = event.args[4];
+          reason = event.args[4];
         } else {
-          /* Fallback: staticCall */
           const [v, r] = await ivContract.verifyIdentity.staticCall(holderAddr, vcHash);
           isValid = v; reason = r;
         }
         steps = buildSteps(true, isValid, isValid, isValid);
 
       } else {
-        /* === Chế độ khách: view functions ===
-           ① DID active?  ② VC valid?  ③ holder match? */
         const provider = getReadProvider();
-        const didContract  = new ethers.Contract(CONTRACT_ADDRESSES.DID_REGISTRY,    DID_REGISTRY_ABI,    provider);
+        const didContract = new ethers.Contract(CONTRACT_ADDRESSES.DID_REGISTRY, DID_REGISTRY_ABI, provider);
         const credContract = new ethers.Contract(CONTRACT_ADDRESSES.CREDENTIAL_REGISTRY, CREDENTIAL_REGISTRY_ABI, provider);
 
         const didDoc = await didContract.resolveDID(holderAddr);
         if (!didDoc.isActive || didDoc.owner === ethers.ZeroAddress) {
-          reason  = "DID của Holder không tồn tại hoặc đã bị vô hiệu hóa.";
-          steps   = buildSteps(true, false, false, false);
+          reason = "DID của Holder không tồn tại hoặc đã bị vô hiệu hóa.";
+          steps = buildSteps(true, false, false, false);
           setVerifyStatus({ valid: false, reason, details: parsed, steps });
           setLoading(false); return;
         }
@@ -121,18 +183,29 @@ export default function VerifierPage({ account: propAccount }) {
 
         const cred = await credContract.getCredential(vcHash);
         if (cred.holder.toLowerCase() !== holderAddr.toLowerCase()) {
-          reason  = "VC này không thuộc về Holder được khai báo trong VP.";
-          steps   = buildSteps(true, true, true, false);
+          reason = "VC này không thuộc về Holder được khai báo trong VP.";
+          steps = buildSteps(true, true, true, false);
           setVerifyStatus({ valid: false, reason, details: parsed, steps });
           setLoading(false); return;
         }
 
         isValid = true;
-        reason  = "Danh tính hợp lệ.";
-        steps   = buildSteps(true, true, true, true);
+        reason = "Danh tính hợp lệ.";
+        steps = buildSteps(true, true, true, true);
       }
 
-      setVerifyStatus({ valid: isValid, reason, details: parsed, steps, withWallet: !!account });
+      setVerifyStatus({
+        valid: isValid,
+        reason,
+        details: parsed,
+        isSelective,
+        expiresAt,
+        audience,
+        nonce,
+        steps,
+        withWallet: !!account,
+      });
+
     } catch (e) {
       let msg = e.reason || e.message || "Lỗi xác thực không xác định.";
       if (msg.includes("CURVE") || msg.includes("signature") || msg.includes("invalid bytes") || msg.includes("must be") || msg.includes("bad signature")) {

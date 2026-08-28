@@ -1,3 +1,4 @@
+import { createSaltedCredential } from "../utils/selectiveDisclosure";
 ﻿import { useState } from "react";
 import { ethers } from "ethers";
 import {
@@ -27,7 +28,11 @@ export default function IssuerPage({ account: propAccount }) {
   const [studentId, setStudentId] = useState("");
   const [major, setMajor] = useState("");
   const [credType, setCredType] = useState("BachelorDegree");
-  const [gradYear, setGradYear] = useState(new Date().getFullYear().toString());
+    const [gradYear, setGradYear] = useState(new Date().getFullYear().toString());
+  const [gpa, setGpa] = useState("3.80");
+  const [classification, setClassification] = useState("Xuất sắc");
+  const [dateOfBirth, setDateOfBirth] = useState("2002-05-15");
+  const [nationalId, setNationalId] = useState("001202012345");
   const [expiresAt, setExpiresAt] = useState("0");
   const [credStatus, setCredStatus] = useState(null);
   const [credLoading, setCredLoading] = useState(false);
@@ -187,29 +192,29 @@ export default function IssuerPage({ account: propAccount }) {
     try {
       const signer = getSigner();
 
+      // Sử dụng chuẩn Salted Claims (Selective Disclosure)
+      const claims = {
+        studentName,
+        studentId,
+        major,
+        gpa: gpa || "3.80",
+        classification: classification || "Xuất sắc",
+        graduationYear: gradYear,
+        dateOfBirth: dateOfBirth || "2002-05-15",
+        nationalId: nationalId || "001202012345",
+      };
 
-      const vcJson = JSON.stringify({
-        "@context": ["https://www.w3.org/2018/credentials/v1"],
-        type: ["VerifiableCredential", credType],
-        issuer: `did:ethr:${account}`,
-        issuanceDate: new Date().toISOString(),
-        credentialSubject: {
-          id: `did:ethr:${holderAddr}`,
-          studentName,
-          studentId,
-          major,
-          graduationYear: gradYear,
-          degree: { type: credType },
-        },
+      const expiry = expiresAt === "0" ? 0n : BigInt(Math.floor(new Date(expiresAt).getTime() / 1000));
+
+      const { vc, rootHash } = createSaltedCredential({
+        issuerDid: `did:ethr:${account}`,
+        holderDid: `did:ethr:${holderAddr}`,
+        credType,
+        claims,
+        expiresAt: expiresAt === "0" ? 0 : Number(expiry),
       });
 
-
-      const vcHash = ethers.keccak256(ethers.toUtf8Bytes(vcJson));
-
-
-      const expiry = expiresAt === "0" ? 0n
-        : BigInt(Math.floor(new Date(expiresAt).getTime() / 1000));
-
+      const vcHash = rootHash;
 
       const contract = new ethers.Contract(
         CONTRACT_ADDRESSES.CREDENTIAL_REGISTRY, CREDENTIAL_REGISTRY_ABI, signer
@@ -220,10 +225,13 @@ export default function IssuerPage({ account: propAccount }) {
       setLastIssuedHash(vcHash);
       setCredStatus({
         type: "success",
-        msg: ` VC đã được phát hành!\nHash: ${vcHash.slice(0, 20)}...\nTx: ${tx.hash}`,
+        msg: `🎉 Bằng cấp đã được phát hành lên Blockchain với mã bảo mật Salted Claims!
+Hash: ${vcHash.slice(0, 20)}...
+Tx: ${tx.hash}`,
       });
 
-
+      // Lưu VC đầy đủ vào LocalStorage của sinh viên
+      const vcJson = JSON.stringify(vc);
       const normalizedHolder = holderAddr.toLowerCase();
       const existing = JSON.parse(localStorage.getItem(`vcs_${normalizedHolder}`) || "[]");
       existing.push({ vcJson, vcHash, issuedAt: Date.now() });
