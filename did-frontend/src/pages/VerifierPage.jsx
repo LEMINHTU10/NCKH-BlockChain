@@ -1,4 +1,4 @@
-﻿import { verifySelectiveDisclosure } from "../utils/selectiveDisclosure";
+import { verifySelectiveDisclosure } from "../utils/selectiveDisclosure";
 import { useState, useEffect, useRef } from "react";
 import { ethers } from "ethers";
 import jsQR from "jsqr";
@@ -229,15 +229,23 @@ export default function VerifierPage({ account: propAccount }) {
 
       // 4. Xác thực Toán học Selective Disclosure (ZKP-lite)
       if (isSelective) {
+        // BUG-07: normalize disclosed claims so compact QR format also has disclosed:true
+        const rawDisclosed = parsed.presentedClaims || parsed.disclosed || {};
+        const normalizedDisclosed = {};
+        for (const [k, v] of Object.entries(rawDisclosed)) {
+          normalizedDisclosed[k] = (typeof v === 'object' && v !== null && 'value' in v)
+            ? { ...v, disclosed: true }
+            : v;
+        }
         const selectiveData = {
-          presentedClaims: parsed.presentedClaims || parsed.disclosed || {},
+          presentedClaims: normalizedDisclosed,
           blindedHashes: parsed.blindedHashes || parsed.blinded || {},
           allKeys: parsed.allKeys || parsed.keys || [],
           vcHash,
         };
         const selectiveCheck = verifySelectiveDisclosure(selectiveData);
         if (!selectiveCheck.isValid) {
-          throw new Error("❌ Phát hiện giả mạo: Mã cam kết băm của thuộc tính không khớp với Root Hash trên Blockchain!");
+          throw new Error("Phat hien gia mao: Ma cam ket bam khong khop voi Root Hash!");
         }
       } else if (parsed.verifiableCredential && parsed.verifiableCredential[0]) {
         const vcObj = parsed.verifiableCredential[0];
@@ -255,16 +263,16 @@ export default function VerifierPage({ account: propAccount }) {
         const ivContract = new ethers.Contract(
           CONTRACT_ADDRESSES.IDENTITY_VERIFIER, IDENTITY_VERIFIER_ABI, signer
         );
-        const tx = await ivContract.verifyIdentity(holderAddr, vcHash);
-        const receipt = await tx.wait();
-
-        const event = receipt.logs.find(log => log.fragment?.name === "IdentityVerified");
-        if (event) {
-          isValid = event.args[3];
-          reason = event.args[4];
-        } else {
-          const [v, r] = await ivContract.verifyIdentity.staticCall(holderAddr, vcHash);
-          isValid = v; reason = r;
+        // BUG-06: staticCall truoc de lay ket qua khong ton gas
+        const [v, r] = await ivContract.verifyIdentity.staticCall(holderAddr, vcHash);
+        isValid = v;
+        reason = r;
+        // Ghi Audit Log tach rieng - neu that bai khong anh huong ket qua
+        try {
+          const tx = await ivContract.verifyIdentity(holderAddr, vcHash);
+          await tx.wait();
+        } catch (auditErr) {
+          console.warn("Audit log write skipped:", auditErr.message);
         }
         steps = buildSteps(true, isValid, isValid, isValid);
 

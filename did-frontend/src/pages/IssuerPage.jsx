@@ -1,5 +1,5 @@
 import { createSaltedCredential } from "../utils/selectiveDisclosure";
-﻿import { useState } from "react";
+import { useState } from "react";
 import { ethers } from "ethers";
 import {
   getSigner,
@@ -37,6 +37,7 @@ export default function IssuerPage({ account: propAccount }) {
   const [credStatus, setCredStatus] = useState(null);
   const [credLoading, setCredLoading] = useState(false);
   const [lastIssuedHash, setLastIssuedHash] = useState("");
+  const [lastIssuedVc, setLastIssuedVc] = useState(null);
   // ── Thu hồi VC ──────────────────────────────────────────
   const [revokeHolderAddr, setRevokeHolderAddr] = useState("");
   const [revokeCredList, setRevokeCredList] = useState([]);
@@ -57,7 +58,7 @@ export default function IssuerPage({ account: propAccount }) {
   if (!account) {
     return (
       <div className="connect-prompt">
-        <div className="connect-prompt-icon"></div>
+        <div className="connect-prompt-icon">🔐</div>
         <h2>Kết nối ví MetaMask</h2>
         <p>Vui lòng kết nối ví MetaMask để sử dụng giao diện Issuer.</p>
       </div>
@@ -223,6 +224,7 @@ export default function IssuerPage({ account: propAccount }) {
       await tx.wait();
 
       setLastIssuedHash(vcHash);
+      setLastIssuedVc(vc);
       setCredStatus({
         type: "success",
         msg: `🎉 Bằng cấp đã được phát hành lên Blockchain với mã bảo mật Salted Claims!
@@ -452,10 +454,29 @@ Tx: ${tx.hash}`,
           </div>
         )}
 
-        {lastIssuedHash && (
-          <div className="alert alert-info" style={{ flexDirection: "column", gap: 4 }}>
+        {lastIssuedHash && lastIssuedVc && (
+          <div className="alert alert-info" style={{ flexDirection: "column", gap: 8 }}>
             <strong>Hash VC (dùng để xác thực):</strong>
             <span className="info-mono" style={{ fontSize: 12, wordBreak: "break-all" }}>{lastIssuedHash}</span>
+            <div style={{ marginTop: 4, padding: '8px 12px', background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 8, fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+              <strong>Quan trong:</strong> Hay tai file VC nay va gui cho sinh vien (qua email / USB). Sinh vien can file nay de tao VP.
+            </div>
+            <button
+              id="btn-download-vc"
+              className="btn btn-outline btn-sm"
+              style={{ alignSelf: 'flex-start' }}
+              onClick={() => {
+                const blob = new Blob([JSON.stringify(lastIssuedVc, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `vc_${holderAddr.slice(2, 10)}_${Date.now()}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+              }}
+            >
+              Tai file VC cho Holder
+            </button>
           </div>
         )}
 

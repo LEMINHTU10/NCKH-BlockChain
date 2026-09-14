@@ -748,31 +748,47 @@ body::before {
 }
 
 .landing-role-card {
-  padding: 20px 16px;
+  padding: 24px 18px 20px;
   border-radius: var(--radius-md);
   border: 1px solid var(--border);
   background: var(--bg-card);
-  transition: all 0.25s ease;
-  cursor: default;
+  transition: all 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  position: relative;
+  outline: none;
 }
 
 .landing-role-card:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 12px 32px rgba(0,0,0,0.3);
+  transform: translateY(-5px);
+  box-shadow: 0 16px 36px rgba(0,0,0,0.4);
 }
 
-.role-issuer  { border-color: rgba(99,179,237,0.2);  }
-.role-holder  { border-color: rgba(183,148,244,0.2); }
-.role-verifier{ border-color: rgba(104,211,145,0.2); }
+.landing-role-card:active {
+  transform: translateY(-2px) scale(0.99);
+}
 
-.role-issuer:hover  { border-color: rgba(99,179,237,0.4);  box-shadow: 0 12px 32px rgba(99,179,237,0.1); }
-.role-holder:hover  { border-color: rgba(183,148,244,0.4); box-shadow: 0 12px 32px rgba(183,148,244,0.1); }
-.role-verifier:hover{ border-color: rgba(104,211,145,0.4); box-shadow: 0 12px 32px rgba(104,211,145,0.1); }
+.landing-role-card:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+}
 
-.role-icon { font-size: 28px; margin-bottom: 8px; }
+.role-issuer  { border-color: rgba(99,179,237,0.25); background: linear-gradient(180deg, rgba(99,179,237,0.04) 0%, var(--bg-card) 100%); }
+.role-holder  { border-color: rgba(183,148,244,0.25); background: linear-gradient(180deg, rgba(183,148,244,0.04) 0%, var(--bg-card) 100%); }
+.role-verifier{ border-color: rgba(104,211,145,0.25); background: linear-gradient(180deg, rgba(104,211,145,0.04) 0%, var(--bg-card) 100%); }
+
+.role-issuer:hover  { border-color: var(--cyan);   box-shadow: 0 16px 36px rgba(99,179,237,0.2); }
+.role-holder:hover  { border-color: var(--purple); box-shadow: 0 16px 36px rgba(183,148,244,0.2); }
+.role-verifier:hover{ border-color: var(--green);  box-shadow: 0 16px 36px rgba(104,211,145,0.2); }
+
+.role-icon { font-size: 32px; margin-bottom: 10px; }
 
 .role-name {
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 700;
   margin-bottom: 4px;
 }
@@ -783,8 +799,16 @@ body::before {
 
 .role-desc {
   font-size: 12px;
-  color: var(--text-muted);
-  margin-bottom: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 14px;
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.role-badge-row {
+  margin-bottom: 14px;
 }
 
 .role-auth-badge {
@@ -800,13 +824,110 @@ body::before {
 .auth-required {
   background: rgba(99,179,237,0.1);
   color: var(--cyan);
-  border: 1px solid rgba(99,179,237,0.2);
+  border: 1px solid rgba(99,179,237,0.25);
 }
 
 .auth-guest {
   background: rgba(104,211,145,0.1);
   color: var(--green);
-  border: 1px solid rgba(104,211,145,0.2);
+  border: 1px solid rgba(104,211,145,0.25);
+}
+
+.auth-connected {
+  background: rgba(104,211,145,0.12);
+  color: var(--green);
+  border: 1px solid rgba(104,211,145,0.35);
+}
+
+/* Action button inside role card */
+.role-enter-btn {
+  margin-top: auto;
+  padding: 7px 16px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+  width: 100%;
+  justify-content: center;
+}
+
+.role-issuer .role-enter-btn {
+  background: rgba(99,179,237,0.12);
+  color: var(--cyan);
+  border: 1px solid rgba(99,179,237,0.3);
+}
+
+.role-issuer:hover .role-enter-btn {
+  background: var(--cyan);
+  color: #080c14;
+  border-color: var(--cyan);
+  box-shadow: 0 0 16px rgba(99,179,237,0.35);
+}
+
+.role-holder .role-enter-btn {
+  background: rgba(183,148,244,0.12);
+  color: var(--purple);
+  border: 1px solid rgba(183,148,244,0.3);
+}
+
+.role-holder:hover .role-enter-btn {
+  background: var(--purple);
+  color: #080c14;
+  border-color: var(--purple);
+  box-shadow: 0 0 16px rgba(183,148,244,0.35);
+}
+
+.role-verifier .role-enter-btn {
+  background: rgba(104,211,145,0.12);
+  color: var(--green);
+  border: 1px solid rgba(104,211,145,0.3);
+}
+
+.role-verifier:hover .role-enter-btn {
+  background: var(--green);
+  color: #080c14;
+  border-color: var(--green);
+  box-shadow: 0 0 16px rgba(104,211,145,0.35);
+}
+
+/* Connected wallet info box on landing page */
+.landing-connected-card {
+  background: rgba(104,211,145,0.06);
+  border: 1px solid rgba(104,211,145,0.25);
+  border-radius: var(--radius-md);
+  padding: 16px 20px;
+  width: 100%;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+  text-align: left;
+}
+
+.landing-connected-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.landing-connected-title {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.landing-connected-addr {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  color: var(--green);
+  font-weight: 600;
+}
+
+.landing-connected-sub {
+  font-size: 13px;
+  color: var(--text-primary);
+  margin-top: 4px;
+  line-height: 1.4;
 }
 
 /* CTA group */
@@ -917,6 +1038,42 @@ body::before {
   animation: spin 0.7s linear infinite;
   display: inline-block;
   flex-shrink: 0;
+}
+
+/* ── Connect Prompt / WalletGuard ───────────────────────── */
+.connect-prompt {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 56px 32px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  max-width: 520px;
+  margin: 60px auto;
+  box-shadow: var(--shadow-card);
+}
+
+.connect-prompt-icon {
+  font-size: 52px;
+  margin-bottom: 20px;
+  filter: drop-shadow(0 0 16px rgba(246,133,27,0.4));
+}
+
+.connect-prompt h2 {
+  font-size: 22px;
+  font-weight: 700;
+  margin-bottom: 12px;
+  color: var(--text-primary);
+}
+
+.connect-prompt p {
+  font-size: 14px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  max-width: 400px;
 }
 
 /* ── Guest mode navbar bar ─────────────────────────────── */

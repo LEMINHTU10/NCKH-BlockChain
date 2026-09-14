@@ -16,10 +16,11 @@ export async function connectWallet() {
 
   
   const network = await provider.getNetwork();
-  if (network.chainId !== 1337n) {
-    throw new Error(
-      `Sai mạng! Đang kết nối mạng chainId=${network.chainId}. Vui lòng chuyển sang mạng Ganache Local (chainId=1337).`
-    );
+  const allowed = import.meta.env.VITE_CHAIN_ID
+    ? [BigInt(import.meta.env.VITE_CHAIN_ID)]
+    : [1337n, 5777n];
+  if (!allowed.includes(network.chainId)) {
+    throw new Error(`Sai mang! chainId=${network.chainId}. Chuyen sang Ganache (1337 hoac 5777).`);
   }
 
   return { provider, signer, account };

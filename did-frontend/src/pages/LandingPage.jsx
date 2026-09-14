@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { shortAddr } from '../utils/web3';
 
-export default function LandingPage({ onConnect, isConnecting, onGuestVerifier }) {
+export default function LandingPage({ account, isConnecting, onSelectRole, onConnect, onLogout }) {
 
   return (
     <div className="landing-root">
@@ -59,49 +59,138 @@ export default function LandingPage({ onConnect, isConnecting, onGuestVerifier }
           ))}
         </div>
 
-        {/* Role Cards — explain who uses what */}
+        {/* Role Cards — Chọn vai trò trực tiếp */}
         <div className="landing-roles">
-          <div className="landing-role-card role-issuer">
+          {/* 1. Issuer Card */}
+          <div
+            id="role-card-issuer"
+            className="landing-role-card role-issuer"
+            onClick={() => onSelectRole('/issuer')}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => e.key === 'Enter' && onSelectRole('/issuer')}
+            title="Nhấp để truy cập vai trò Issuer (Trường / Tổ chức cấp bằng)"
+          >
             <div className="role-icon">🏛️</div>
             <div className="role-name">Issuer</div>
-            <div className="role-desc">Trường / Tổ chức</div>
-            <div className="role-auth-badge auth-required">🔐 Cần đăng nhập</div>
+            <div className="role-desc">Trường / Tổ chức cấp bằng</div>
+            <div className="role-badge-row">
+              {account ? (
+                <div className="role-auth-badge auth-connected">✨ Ví đã sẵn sàng</div>
+              ) : (
+                <div className="role-auth-badge auth-required">🔐 Cần ví MetaMask</div>
+              )}
+            </div>
+            <div className="role-enter-btn">
+              Truy cập Issuer <span>→</span>
+            </div>
           </div>
-          <div className="landing-role-card role-holder">
+
+          {/* 2. Holder Card */}
+          <div
+            id="role-card-holder"
+            className="landing-role-card role-holder"
+            onClick={() => onSelectRole('/holder')}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => e.key === 'Enter' && onSelectRole('/holder')}
+            title="Nhấp để truy cập vai trò Holder (Sinh viên nhận & chia sẻ bằng)"
+          >
             <div className="role-icon">🎓</div>
             <div className="role-name">Holder</div>
-            <div className="role-desc">Sinh viên</div>
-            <div className="role-auth-badge auth-required">🔐 Cần đăng nhập</div>
+            <div className="role-desc">Sinh viên nhận &amp; chia sẻ bằng</div>
+            <div className="role-badge-row">
+              {account ? (
+                <div className="role-auth-badge auth-connected">✨ Ví đã sẵn sàng</div>
+              ) : (
+                <div className="role-auth-badge auth-required">🔐 Cần ví MetaMask</div>
+              )}
+            </div>
+            <div className="role-enter-btn">
+              Truy cập Holder <span>→</span>
+            </div>
           </div>
-          <div className="landing-role-card role-verifier">
+
+          {/* 3. Verifier Card */}
+          <div
+            id="role-card-verifier"
+            className="landing-role-card role-verifier"
+            onClick={() => onSelectRole('/verifier')}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => e.key === 'Enter' && onSelectRole('/verifier')}
+            title="Nhấp để truy cập vai trò Verifier (Doanh nghiệp xác thực bằng cấp)"
+          >
             <div className="role-icon">🔎</div>
             <div className="role-name">Verifier</div>
-            <div className="role-desc">Doanh nghiệp</div>
-            <div className="role-auth-badge auth-guest">✅ Không cần đăng nhập</div>
+            <div className="role-desc">Doanh nghiệp kiểm tra bằng</div>
+            <div className="role-badge-row">
+              <div className="role-auth-badge auth-guest">✅ Không cần đăng nhập</div>
+            </div>
+            <div className="role-enter-btn">
+              Truy cập Verifier <span>→</span>
+            </div>
           </div>
         </div>
 
         {/* CTA Buttons */}
         <div className="landing-cta-group">
-          {/* Primary: Connect MetaMask */}
-          <button
-            id="btn-connect-metamask"
-            className={`landing-cta-btn ${isConnecting ? 'loading' : ''}`}
-            onClick={onConnect}
-            disabled={isConnecting}
-          >
-            {isConnecting ? (
-              <><span className="landing-spinner" /> Đang kết nối ví...</>
-            ) : (
-              <><MetaMaskIcon /> Kết nối MetaMask — Trường / Sinh viên</>
-            )}
-          </button>
+          {account ? (
+            <div className="landing-connected-card">
+              <div className="landing-connected-header">
+                <div className="wallet-dot" />
+                <span className="landing-connected-title">Ví MetaMask đã kết nối:</span>
+                <span className="landing-connected-addr" title={account}>{shortAddr(account)}</span>
+                <button
+                  type="button"
+                  className="btn btn-outline btn-sm"
+                  onClick={onLogout}
+                  style={{ fontSize: 11, padding: '3px 8px', marginLeft: 'auto' }}
+                  title="Đăng xuất ví"
+                >
+                  🚪 Đăng xuất
+                </button>
+              </div>
+              <p className="landing-connected-sub">
+                👉 Nhấp chọn vai trò <strong>🏛️ Issuer</strong> hoặc <strong>🎓 Holder</strong> ở trên để bắt đầu!
+              </p>
+              <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
+                <button
+                  className="btn btn-primary btn-sm"
+                  style={{ flex: 1, fontSize: 12, padding: '8px 12px' }}
+                  onClick={() => onSelectRole('/issuer')}
+                >
+                  🏛️ Vào Issuer
+                </button>
+                <button
+                  className="btn btn-primary btn-sm"
+                  style={{ flex: 1, fontSize: 12, padding: '8px 12px', background: 'linear-gradient(135deg, var(--purple), #805ad5)' }}
+                  onClick={() => onSelectRole('/holder')}
+                >
+                  🎓 Vào Holder
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              id="btn-connect-metamask"
+              className={`landing-cta-btn ${isConnecting ? 'loading' : ''}`}
+              onClick={onConnect}
+              disabled={isConnecting}
+            >
+              {isConnecting ? (
+                <><span className="landing-spinner" /> Đang kết nối ví...</>
+              ) : (
+                <><MetaMaskIcon /> Kết nối MetaMask — Trường / Sinh viên</>
+              )}
+            </button>
+          )}
 
           {/* Secondary: Guest Verifier */}
           <button
             id="btn-guest-verifier"
             className="landing-guest-btn"
-            onClick={onGuestVerifier}
+            onClick={() => onSelectRole('/verifier')}
           >
             <span>🔎</span>
             Xác thực bằng cấp <span className="guest-btn-sub">(Doanh nghiệp · Không cần đăng nhập)</span>

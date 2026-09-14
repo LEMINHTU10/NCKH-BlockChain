@@ -22,6 +22,7 @@ contract IdentityVerifier {
     }
 
     AuditRecord[] private auditLog;
+    uint256 public constant MAX_AUDIT_LOG = 10000; // Giới hạn để tránh DoS / gas limit
 
     
     event IdentityVerified(
@@ -93,14 +94,17 @@ contract IdentityVerifier {
         bool    _result,
         string memory _reason
     ) internal {
-        auditLog.push(AuditRecord({
-            verifier:       msg.sender,
-            holder:         _holder,
-            credentialHash: _credentialHash,
-            result:         _result,
-            reason:         _reason,
-            timestamp:      block.timestamp
-        }));
+        // Chỉ lưu on-chain nếu chưa đạt giới hạn; event luôn được phát ra
+        if (auditLog.length < MAX_AUDIT_LOG) {
+            auditLog.push(AuditRecord({
+                verifier:       msg.sender,
+                holder:         _holder,
+                credentialHash: _credentialHash,
+                result:         _result,
+                reason:         _reason,
+                timestamp:      block.timestamp
+            }));
+        }
 
         emit IdentityVerified(msg.sender, _holder, _credentialHash, _result, _reason);
     }
