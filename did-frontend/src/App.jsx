@@ -60,12 +60,15 @@ function AppNavbar({ account, onLogout, onConnect, isConnecting, sidebarOpen, on
           <button
             type="button"
             onClick={onToggleSidebar}
-            className="p-1.5 rounded-lg border border-border-ui bg-surface-subtle hover:bg-slate-100 text-text-sub hover:text-primary transition-all flex items-center justify-center cursor-pointer shadow-xs active:scale-95"
-            title={sidebarOpen ? "Thu gọn thanh điều hướng" : "Mở thanh điều hướng"}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-border-ui bg-slate-50 hover:bg-blue-50 text-text-main hover:text-primary transition-all cursor-pointer shadow-xs active:scale-95 shrink-0"
+            title={sidebarOpen ? "Thu gọn thanh điều hướng (Sidebar)" : "Mở thanh điều hướng (Sidebar)"}
             aria-label="Toggle sidebar"
           >
-            <span className="material-symbols-outlined text-[20px] transition-transform duration-300">
+            <span className="material-symbols-outlined text-[20px] text-primary">
               {sidebarOpen ? 'menu_open' : 'menu'}
+            </span>
+            <span className="text-xs font-semibold text-text-main hidden sm:inline">
+              {sidebarOpen ? 'Đóng Menu' : 'Mở Menu'}
             </span>
           </button>
 
@@ -117,7 +120,7 @@ function AppNavbar({ account, onLogout, onConnect, isConnecting, sidebarOpen, on
 }
 
 // ── Sidebar chung với hiệu ứng trượt ────────────────────────
-function AppSidebar({ isOpen }) {
+function AppSidebar({ isOpen, onToggle }) {
   const location = useLocation();
   
   return (
@@ -127,7 +130,18 @@ function AppSidebar({ isOpen }) {
       }`}
     >
       <div className="flex flex-col gap-2 px-3">
-        <div className="px-3 py-1 font-bold text-[11px] text-text-muted uppercase tracking-wider">Hệ Thống Phân Tán</div>
+        <div className="flex items-center justify-between px-3 py-1">
+          <span className="font-bold text-[11px] text-text-muted uppercase tracking-wider">Hệ Thống Phân Tán</span>
+          <button
+            type="button"
+            onClick={onToggle}
+            className="flex items-center gap-0.5 text-[11px] font-semibold text-text-muted hover:text-primary hover:bg-slate-100 px-1.5 py-0.5 rounded cursor-pointer transition-colors"
+            title="Thu gọn thanh điều hướng"
+          >
+            <span className="material-symbols-outlined text-[16px]">chevron_left</span>
+            <span>Ẩn</span>
+          </button>
+        </div>
         <nav className="flex flex-col gap-1">
           {ROUTES.map((route) => {
             const isActive = location.pathname === route.path;
@@ -221,12 +235,29 @@ export default function App() {
             sidebarOpen={sidebarOpen}
             onToggleSidebar={() => setSidebarOpen(prev => !prev)}
           />
-          <AppSidebar isOpen={sidebarOpen} />
+          <AppSidebar 
+            isOpen={sidebarOpen} 
+            onToggle={() => setSidebarOpen(prev => !prev)} 
+          />
           {sidebarOpen && (
             <div 
               onClick={() => setSidebarOpen(false)} 
               className="fixed inset-0 bg-slate-900/20 z-30 lg:hidden backdrop-blur-xs transition-opacity duration-300"
             />
+          )}
+
+          {/* Nút mở nhanh thanh điều hướng nổi ở mép trái khi sidebar đang ẩn */}
+          {!sidebarOpen && (
+            <button
+              type="button"
+              onClick={() => setSidebarOpen(true)}
+              className="fixed left-0 top-20 z-40 bg-white hover:bg-blue-50 text-primary border border-border-ui border-l-0 rounded-r-lg py-2.5 px-1.5 shadow-md flex items-center justify-center cursor-pointer transition-all hover:pr-3 group"
+              title="Mở thanh điều hướng"
+            >
+              <span className="material-symbols-outlined text-[22px] group-hover:scale-110 transition-transform">
+                chevron_right
+              </span>
+            </button>
           )}
         </>
       )}
