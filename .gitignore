@@ -1,4 +1,4 @@
-﻿# Node modules
+# Node modules
 /node_modules
 did-frontend/node_modules/
 
@@ -33,4 +33,13 @@ coder.txt
 .agents/
 .gemini/
 .vscode/
+
+# Local backup & IDE temporary files
+*_backup.*
+*_backup/
+*.backup
+.vscode_hardhat_config_*.ts
+.DS_Store
+Thumbs.db
+
 

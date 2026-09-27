@@ -26,8 +26,35 @@ export async function connectWallet() {
   return { provider, signer, account };
 }
 
-export function getProvider() { return provider; }
-export function getSigner()   { return signer; }
+export function getProvider() { 
+  if (provider) return provider;
+  if (typeof window !== "undefined" && window.ethereum) {
+    try {
+      provider = new ethers.BrowserProvider(window.ethereum);
+      return provider;
+    } catch (e) {}
+  }
+  provider = new ethers.JsonRpcProvider(import.meta.env.VITE_GANACHE_URL || "http://localhost:7545");
+  return provider; 
+}
+
+export async function getSigner() {
+  if (signer) return signer;
+  if (typeof window !== "undefined" && window.ethereum) {
+    try {
+      const p = getProvider();
+      if (p instanceof ethers.BrowserProvider) {
+        signer = await p.getSigner();
+        account = await signer.getAddress();
+        return signer;
+      }
+    } catch (e) {
+      // Wallet not connected
+    }
+  }
+  return null;
+}
+
 export function getAccount()  { return account; }
 
 
