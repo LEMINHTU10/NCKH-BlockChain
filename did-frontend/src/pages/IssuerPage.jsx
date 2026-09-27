@@ -483,13 +483,6 @@ export default function IssuerPage({ account }) {
               <span className="px-2.5 py-0.5 rounded bg-blue-50 border border-blue-100 text-primary font-semibold text-xs uppercase tracking-wide">
                 Cổng Quản Trị Cấp Phát & Thu Hồi Bằng Đại Học
               </span>
-              <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-medium">
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-600"></span>
-                </span>
-                <span>Chuẩn Quốc Tế W3C Verifiable Credentials</span>
-              </div>
             </div>
             
             <h1 className="text-2xl lg:text-3xl font-bold text-primary tracking-tight mb-2">
@@ -642,7 +635,6 @@ export default function IssuerPage({ account }) {
                   <p className="text-xs text-text-muted">Tạo mới và ký số văn bằng đại học trực tiếp vào chuỗi khối</p>
                 </div>
               </div>
-              <span className="hidden sm:inline px-2 py-1 rounded bg-slate-100 text-text-muted text-[11px] font-mono border border-slate-200">Chuẩn EIP-712 / W3C VC</span>
             </div>
             
             <form onSubmit={handleIssue} className="flex flex-col gap-4">

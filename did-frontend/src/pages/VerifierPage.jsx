@@ -630,7 +630,7 @@ export default function VerifierPage({ account }) {
 
             {/* 4-Step Pipeline Status Card */}
             <div className="bg-white rounded-xl border border-border-ui shadow-sm p-5 space-y-4">
-              <h3 className="font-bold text-sm text-text-main tracking-wide uppercase">Quy Trình Kiểm Tra 4 Bước (Bảo Mật Tuyệt Đối)</h3>
+              <h3 className="font-bold text-sm text-text-main tracking-wide uppercase">Quy Trình Kiểm Tra 4 Bước</h3>
               <div className="flex flex-col gap-2.5">
                 {verifySteps.map(step => (
                   <div key={step.id} className="flex items-start gap-3 p-3 rounded-lg border border-border-ui bg-surface-subtle transition-all">
@@ -799,7 +799,7 @@ export default function VerifierPage({ account }) {
             <div className="flex items-center gap-2">
               <span className="material-symbols-outlined text-primary text-[22px]">history_edu</span>
               <div>
-                <h3 className="text-base font-bold text-text-main">Nhật Ký Thẩm Định On-Chain (Audit Log)</h3>
+                <h3 className="text-base font-bold text-text-main">Nhật Ký Thẩm Định On-Chain</h3>
                 <p className="text-xs text-text-muted">Dữ liệu bất biến được ghi nhận trực tiếp vào Smart Contract IdentityVerifier trên Ethereum</p>
               </div>
             </div>
