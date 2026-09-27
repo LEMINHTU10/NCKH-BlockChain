@@ -48,26 +48,39 @@ function WalletGuard({ account, onConnect, isConnecting, children }) {
 }
 
 // ── Navbar chung ────────────────────────────────────────────
-function AppNavbar({ account, onLogout, onConnect, isConnecting }) {
+function AppNavbar({ account, onLogout, onConnect, isConnecting, sidebarOpen, onToggleSidebar }) {
   const navigate = useNavigate();
   
   return (
     <header className="fixed top-0 left-0 right-0 h-16 z-50 bg-surface border-b border-border-ui shadow-sm">
       <div className="h-16 w-full px-4 lg:px-6 flex items-center justify-between gap-4">
         
-        {/* Left: Logo & Brand */}
-        <div className="flex items-center gap-3 cursor-pointer" onClick={() => navigate('/')}>
-          <div className="w-10 h-10 rounded-lg bg-primary flex items-center justify-center text-white font-bold shadow-sm shrink-0 border border-blue-900">
-            <div className="flex flex-col items-center leading-none tracking-tighter">
-              <span className="material-symbols-outlined text-[24px]">verified</span>
+        {/* Left: Toggle Button + Logo & Brand */}
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={onToggleSidebar}
+            className="p-1.5 rounded-lg border border-border-ui bg-surface-subtle hover:bg-slate-100 text-text-sub hover:text-primary transition-all flex items-center justify-center cursor-pointer shadow-xs active:scale-95"
+            title={sidebarOpen ? "Thu gọn thanh điều hướng" : "Mở thanh điều hướng"}
+            aria-label="Toggle sidebar"
+          >
+            <span className="material-symbols-outlined text-[20px] transition-transform duration-300">
+              {sidebarOpen ? 'menu_open' : 'menu'}
+            </span>
+          </button>
+
+          <div className="flex items-center gap-2.5 cursor-pointer" onClick={() => navigate('/')}>
+            <div className="w-10 h-10 rounded-lg bg-primary flex items-center justify-center text-white font-bold shadow-sm shrink-0 border border-blue-900">
+              <div className="flex flex-col items-center leading-none tracking-tighter">
+                <span className="material-symbols-outlined text-[24px]">verified</span>
+              </div>
+            </div>
+            <div className="flex flex-col">
+              <span className="font-bold text-[13px] sm:text-[14px] text-primary uppercase tracking-tight leading-tight">DID System</span>
+              <span className="text-[11px] text-text-muted hidden sm:inline leading-none font-medium">Hệ Thống Xác Thực Danh Tính & Văn Bằng</span>
             </div>
           </div>
-          <div className="flex flex-col">
-            <span className="font-bold text-[13px] sm:text-[14px] text-primary uppercase tracking-tight leading-tight">DID System</span>
-            <span className="text-[11px] text-text-muted hidden sm:inline leading-none font-medium">Hệ Thống Xác Thực Danh Tính & Văn Bằng</span>
-          </div>
         </div>
-
 
         {/* Right Actions */}
         <div className="flex items-center gap-2 sm:gap-4 shrink-0">
@@ -103,12 +116,16 @@ function AppNavbar({ account, onLogout, onConnect, isConnecting }) {
   );
 }
 
-// ── Sidebar chung ───────────────────────────────────────────
-function AppSidebar() {
+// ── Sidebar chung với hiệu ứng trượt ────────────────────────
+function AppSidebar({ isOpen }) {
   const location = useLocation();
   
   return (
-    <aside className="fixed left-0 top-16 bottom-0 w-64 bg-surface border-r border-border-ui z-40 flex flex-col py-4 shadow-sm hidden lg:flex">
+    <aside 
+      className={`fixed left-0 top-16 bottom-0 w-64 bg-surface border-r border-border-ui z-40 flex flex-col py-4 shadow-sm transition-transform duration-300 ease-in-out ${
+        isOpen ? 'translate-x-0' : '-translate-x-full'
+      }`}
+    >
       <div className="flex flex-col gap-2 px-3">
         <div className="px-3 py-1 font-bold text-[11px] text-text-muted uppercase tracking-wider">Hệ Thống Phân Tán</div>
         <nav className="flex flex-col gap-1">
@@ -139,6 +156,7 @@ function AppSidebar() {
 export default function App() {
   const [account, setAccount] = useState(null);
   const [isConnecting, setIsConnecting] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const location = useLocation();
   const navigate = useNavigate();
   const isHome = location.pathname === '/';
@@ -200,12 +218,20 @@ export default function App() {
             onLogout={handleLogout}
             onConnect={handleConnectWallet}
             isConnecting={isConnecting}
+            sidebarOpen={sidebarOpen}
+            onToggleSidebar={() => setSidebarOpen(prev => !prev)}
           />
-          <AppSidebar />
+          <AppSidebar isOpen={sidebarOpen} />
+          {sidebarOpen && (
+            <div 
+              onClick={() => setSidebarOpen(false)} 
+              className="fixed inset-0 bg-slate-900/20 z-30 lg:hidden backdrop-blur-xs transition-opacity duration-300"
+            />
+          )}
         </>
       )}
 
-      <main className={!isHome ? 'lg:pl-64 pt-16 w-full' : 'w-full'}>
+      <main className={!isHome ? `${sidebarOpen ? 'lg:pl-64' : 'pl-0'} pt-16 w-full transition-[padding] duration-300 ease-in-out` : 'w-full'}>
         <Routes>
           {/* Trang chủ */}
           <Route
