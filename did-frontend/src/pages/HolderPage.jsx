@@ -51,6 +51,23 @@ export default function HolderPage({ account }) {
       loadHolderInfo();
       loadMyCredentials();
       loadShareHistory();
+
+      // Lắng nghe sự kiện thu hồi văn bằng (CredentialRevoked) trực tiếp từ Blockchain
+      let credContract;
+      try {
+        const provider = getProvider();
+        credContract = new ethers.Contract(CONTRACT_ADDRESSES.CREDENTIAL_REGISTRY, CREDENTIAL_REGISTRY_ABI, provider);
+        const onRevoked = (revokedHash) => {
+          console.log("Phát hiện văn bằng bị thu hồi trên blockchain:", revokedHash);
+          loadMyCredentials();
+        };
+        credContract.on("CredentialRevoked", onRevoked);
+        return () => {
+          credContract.off("CredentialRevoked", onRevoked);
+        };
+      } catch (e) {
+        console.warn("Lỗi đăng ký lắng nghe sự kiện thu hồi:", e);
+      }
     }
   }, [account]);
 
@@ -100,11 +117,22 @@ export default function HolderPage({ account }) {
       const normalized = account.toLowerCase();
       const localVCs = JSON.parse(localStorage.getItem(`vcs_${normalized}`) || "[]");
 
+      // Hợp nhất danh sách hash từ blockchain và các tệp VC đã nạp cục bộ
+      const allHashSet = new Set([
+        ...hashes.map((h) => h.toLowerCase()),
+        ...localVCs.map((v) => (v.vcHash || v.hash)?.toLowerCase()).filter(Boolean),
+      ]);
+
       const list = [];
-      for (const hash of hashes) {
+      for (const hashLower of allHashSet) {
+        const hash = hashes.find(h => h.toLowerCase() === hashLower)
+          || localVCs.find(v => (v.vcHash || v.hash)?.toLowerCase() === hashLower)?.vcHash
+          || hashLower;
         try {
           const cred = await credContract.getCredential(hash);
-          const localItem = localVCs.find((v) => v.vcHash?.toLowerCase() === hash.toLowerCase());
+          if (cred.issuer === ethers.ZeroAddress) continue;
+
+          const localItem = localVCs.find((v) => (v.vcHash || v.hash)?.toLowerCase() === hash.toLowerCase());
           let vcData = null;
           if (localItem?.vcJson) {
             try {
@@ -250,15 +278,40 @@ export default function HolderPage({ account }) {
   // Tạo Verifiable Presentation (VP) có chữ ký mật mã chuẩn
   async function handleGenerateVP() {
     if (!selectedCred) return alert("Vui lòng chọn một văn bằng.");
-    if (selectedCred.isRevoked) {
-      return alert("⚠️ Văn bằng này đã bị THU HỒI (REVOKED) trên Blockchain. Không thể tạo mã trình ký VP!");
-    }
 
     setVpLoading(true);
     setVpPayload(null);
     setQrDataUrl(null);
 
     try {
+      // 1. KIỂM TRA TRẠNG THÁI ON-CHAIN TỨC THÌ TRỰC TIẾP TRÊN SMART CONTRACT
+      const provider = getProvider();
+      const credContract = new ethers.Contract(
+        CONTRACT_ADDRESSES.CREDENTIAL_REGISTRY,
+        CREDENTIAL_REGISTRY_ABI,
+        provider
+      );
+      
+      const onchain = await credContract.getCredential(selectedCred.hash);
+      
+      if (!onchain || onchain.issuer === ethers.ZeroAddress) {
+        setVpLoading(false);
+        return alert("⚠️ Lỗi bảo mật: Văn bằng này không tồn tại trên Smart Contract!");
+      }
+
+      if (onchain.isRevoked) {
+        // Cập nhật ngay lập tức vào state của Holder để UI hiển thị badge ĐÃ THU HỒI
+        setSelectedCred(prev => prev ? ({ ...prev, isRevoked: true }) : prev);
+        setMyCredentials(prev => prev.map(c => c.hash.toLowerCase() === selectedCred.hash.toLowerCase() ? { ...c, isRevoked: true } : c));
+        setVpLoading(false);
+        return alert("⛔ TỪ CHỐI TẠO MÃ TRÌNH KÝ:\n\nVăn bằng này đã bị Trường học / Cơ sở đào tạo THU HỒI (REVOKED) trên Blockchain!\nHiệu lực pháp lý của văn bằng đã chấm dứt hoàn toàn. Hệ thống ngăn chặn sinh viên tạo mã xác thực VP!");
+      }
+
+      if (onchain.expiresAt && Number(onchain.expiresAt) > 0 && Math.floor(Date.now() / 1000) > Number(onchain.expiresAt)) {
+        setVpLoading(false);
+        return alert("⛔ TỪ CHỐI TẠO MÃ TRÌNH KÝ: Văn bằng này đã HẾT HẠN HIỆU LỰC trên Blockchain!");
+      }
+
       const signer = await getSigner();
 
       // Lấy thông tin credential mới nhất

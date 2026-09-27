@@ -60,13 +60,28 @@ export default function VerifierPage({ account }) {
     }
   }, [activeTab]);
 
+  const isScanningRef = useRef(false);
+  const barcodeDetectorRef = useRef(null);
+
   // Camera Handlers
   async function startCamera() {
     setIsCameraActive(true);
     setCameraError(null);
     try {
+      if (typeof window !== "undefined" && "BarcodeDetector" in window) {
+        try {
+          barcodeDetectorRef.current = new window.BarcodeDetector({ formats: ["qr_code"] });
+        } catch (e) {
+          console.warn("BarcodeDetector không hỗ trợ:", e);
+        }
+      }
+
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "environment", width: { ideal: 640 }, height: { ideal: 480 } },
+        video: { 
+          facingMode: "environment", 
+          width: { ideal: 1280, min: 640 }, 
+          height: { ideal: 720, min: 480 } 
+        },
       });
       streamRef.current = stream;
       if (videoRef.current) {
@@ -91,31 +106,117 @@ export default function VerifierPage({ account }) {
       streamRef.current.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
     }
+    isScanningRef.current = false;
     setIsCameraActive(false);
   }
 
-  function scanVideoFrame() {
-    if (!videoRef.current || videoRef.current.readyState !== videoRef.current.HAVE_ENOUGH_DATA) {
+  async function scanVideoFrame() {
+    if (!videoRef.current || videoRef.current.readyState < 2) {
       animFrameId.current = requestAnimationFrame(scanVideoFrame);
       return;
     }
-    const canvas = canvasRef.current || document.createElement("canvas");
-    const video = videoRef.current;
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    const ctx = canvas.getContext("2d", { willReadFrequently: true });
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const code = jsQR(imageData.data, imageData.width, imageData.height, {
-      inversionAttempts: "attemptBoth",
-    });
-
-    if (code && code.data) {
-      stopCamera();
-      setVpJson(code.data);
-      executeVerification(code.data);
-    } else {
+    if (isScanningRef.current) {
       animFrameId.current = requestAnimationFrame(scanVideoFrame);
+      return;
+    }
+    isScanningRef.current = true;
+
+    try {
+      const video = videoRef.current;
+      const vw = video.videoWidth;
+      const vh = video.videoHeight;
+
+      // ── CHIẾN LƯỢC 1: Native BarcodeDetector (Chuẩn xác, tốc độ cao, xử lý moiré màn hình tốt)
+      if (barcodeDetectorRef.current) {
+        try {
+          const barcodes = await barcodeDetectorRef.current.detect(video);
+          if (barcodes && barcodes.length > 0 && barcodes[0].rawValue) {
+            const raw = barcodes[0].rawValue;
+            stopCamera();
+            setVpJson(raw);
+            executeVerification(raw);
+            return;
+          }
+        } catch (e) {}
+      }
+
+      // ── CHIẾN LƯỢC 2: jsQR với Vùng cắt Trung tâm (Center Crop) + Viền trắng Quiet Zone 30px
+      // Trùng khớp chính xác với khung vuông màu xanh trên camera, loại bỏ viền đen/bàn phím xung quanh
+      if (vw > 0 && vh > 0) {
+        const cropSize = Math.round(Math.min(vw, vh) * 0.72);
+        const startX = Math.round((vw - cropSize) / 2);
+        const startY = Math.round((vh - cropSize) / 2);
+
+        const canvas = canvasRef.current || document.createElement("canvas");
+        const targetDim = Math.min(cropSize, 640);
+        const padding = 30; // Viền trắng Quiet Zone bắt buộc cho jsQR
+        canvas.width = targetDim + padding * 2;
+        canvas.height = targetDim + padding * 2;
+        const ctx = canvas.getContext("2d", { willReadFrequently: true });
+
+        if (ctx) {
+          ctx.fillStyle = "#ffffff";
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(video, startX, startY, cropSize, cropSize, padding, padding, targetDim, targetDim);
+
+          let imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          let code = jsQR(imgData.data, imgData.width, imgData.height, {
+            inversionAttempts: "attemptBoth",
+          });
+
+          if (code && code.data) {
+            stopCamera();
+            setVpJson(code.data);
+            executeVerification(code.data);
+            return;
+          }
+
+          // ── CHIẾN LƯỢC 3: Tăng cường tương phản (Contrast Boost) xử lý lóa sáng từ màn hình máy tính
+          ctx.fillStyle = "#ffffff";
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.filter = "contrast(1.5) brightness(1.05)";
+          ctx.drawImage(video, startX, startY, cropSize, cropSize, padding, padding, targetDim, targetDim);
+          ctx.filter = "none";
+          imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          code = jsQR(imgData.data, imgData.width, imgData.height, {
+            inversionAttempts: "attemptBoth",
+          });
+
+          if (code && code.data) {
+            stopCamera();
+            setVpJson(code.data);
+            executeVerification(code.data);
+            return;
+          }
+
+          // ── CHIẾN LƯỢC 4: Fallback quét toàn khung hình (Full Frame)
+          const fullCanvas = document.createElement("canvas");
+          const fullScale = Math.min(1, 800 / Math.max(vw, vh));
+          fullCanvas.width = Math.round(vw * fullScale);
+          fullCanvas.height = Math.round(vh * fullScale);
+          const fullCtx = fullCanvas.getContext("2d", { willReadFrequently: true });
+          if (fullCtx) {
+            fullCtx.drawImage(video, 0, 0, fullCanvas.width, fullCanvas.height);
+            const fullImgData = fullCtx.getImageData(0, 0, fullCanvas.width, fullCanvas.height);
+            code = jsQR(fullImgData.data, fullImgData.width, fullImgData.height, {
+              inversionAttempts: "attemptBoth",
+            });
+            if (code && code.data) {
+              stopCamera();
+              setVpJson(code.data);
+              executeVerification(code.data);
+              return;
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("Scan video frame error:", err);
+    } finally {
+      isScanningRef.current = false;
+      if (isCameraActive) {
+        animFrameId.current = requestAnimationFrame(scanVideoFrame);
+      }
     }
   }
 
@@ -436,7 +537,7 @@ export default function VerifierPage({ account }) {
 
       // Ghi Audit Log on-chain nếu Verifier có kết nối ví MetaMask
       try {
-        const signer = getSigner();
+        const signer = await getSigner();
         if (signer) {
           const ivContract = new ethers.Contract(CONTRACT_ADDRESSES.IDENTITY_VERIFIER, IDENTITY_VERIFIER_ABI, signer);
           const tx = await ivContract.verifyIdentity(holderAddr, vcHash);
